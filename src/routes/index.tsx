@@ -381,7 +381,11 @@ function Dashboard({ inputs, setInputs, onEdit }: { inputs: Inputs; setInputs: (
   const budget = useMemo(() => budgetAnalysis(inputs.budget, est.total), [inputs.budget, est.total]);
   const hs = useMemo(() => healthScore(inputs, est.total, inputs.budget), [inputs, est.total]);
   const category = houseCategory(est.total);
-  const recs = useMemo(() => recommendations(inputs, est.total, inputs.budget), [inputs, est.total]);
+  const recs = useMemo(() => smartRecommendations(inputs, est.total, inputs.budget), [inputs, est.total]);
+  const plan = useMemo(() => planningScore(inputs, est.total, inputs.budget), [inputs, est.total]);
+  const insight = useMemo(() => houseSizeInsight(inputs.builtUpArea), [inputs.builtUpArea]);
+
+  const downloadPdf = () => generateReportPdf({ inputs, est, stages, budget, hs, category, plan, insight, recs });
 
   const scenarios = useMemo(() => ([
     { name: "Basic", cost: computeEstimate({ ...inputs, quality: "Basic" }).total },
