@@ -599,18 +599,12 @@ function Dashboard({ inputs, setInputs, onEdit }: { inputs: Inputs; setInputs: (
             <Gauge className="w-5 h-5 text-primary" />
             <h3 className="font-display font-bold">Report</h3>
           </div>
-          <div className="space-y-2">
-            {[
-              { icon: Download, label: "Download PDF" },
-              { icon: Printer, label: "Print Report" },
-              { icon: Share2, label: "Share Report" },
-            ].map((r) => (
-              <button key={r.label} disabled className="w-full flex items-center justify-between rounded-xl border border-border px-4 py-3 text-sm opacity-60 cursor-not-allowed">
-                <span className="flex items-center gap-2"><r.icon className="w-4 h-4" />{r.label}</span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">Coming soon</span>
-              </button>
-            ))}
-          </div>
+          <p className="text-xs text-muted-foreground mb-4">Download a full PDF report of your estimate, budget analysis, stage-wise breakdown and smart recommendations.</p>
+          <button onClick={downloadPdf} className="w-full flex items-center justify-between rounded-xl bg-gradient-to-r from-primary to-accent-blue text-primary-foreground px-4 py-3 text-sm font-semibold hover:-translate-y-0.5 transition shadow-lg shadow-primary/20">
+            <span className="flex items-center gap-2"><Download className="w-4 h-4" /> Download PDF Report</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+          <div className="mt-3 text-xs text-muted-foreground">Includes all dashboard insights in a printable format.</div>
         </div>
       </div>
     </section>
