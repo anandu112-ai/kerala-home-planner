@@ -5,7 +5,8 @@ import {
   Lightbulb, Calculator, Layers, ArrowRight, ArrowLeft, Check, Sparkles,
   Fence, DoorOpen, Car, Droplet, Waves, Sun, Sofa, Trees, Cpu, Cctv,
   Zap, Grid3x3, Paintbrush, MapPin, Ruler, Bed, Bath, Building,
-  IndianRupee, Gauge, ChartPie, Download, Printer, Share2,
+  IndianRupee, Gauge, ChartPie, Download,
+  AlertTriangle, PartyPopper, CheckCircle2, ChefHat, Award, Users, ChevronDown,
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
@@ -13,8 +14,10 @@ import {
 } from "recharts";
 import {
   DISTRICTS, ADDONS, computeEstimate, stageBreakdown, budgetAnalysis,
-  healthScore, houseCategory, recommendations, inr, type Inputs,
+  healthScore, houseCategory, smartRecommendations, houseSizeInsight, planningScore,
+  inr, type Inputs, type SmartRec,
 } from "@/lib/estimator";
+import jsPDF from "jspdf";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -378,7 +381,11 @@ function Dashboard({ inputs, setInputs, onEdit }: { inputs: Inputs; setInputs: (
   const budget = useMemo(() => budgetAnalysis(inputs.budget, est.total), [inputs.budget, est.total]);
   const hs = useMemo(() => healthScore(inputs, est.total, inputs.budget), [inputs, est.total]);
   const category = houseCategory(est.total);
-  const recs = useMemo(() => recommendations(inputs, est.total, inputs.budget), [inputs, est.total]);
+  const recs = useMemo(() => smartRecommendations(inputs, est.total, inputs.budget), [inputs, est.total]);
+  const plan = useMemo(() => planningScore(inputs, est.total, inputs.budget), [inputs, est.total]);
+  const insight = useMemo(() => houseSizeInsight(inputs.builtUpArea), [inputs.builtUpArea]);
+
+  const downloadPdf = () => generateReportPdf({ inputs, est, stages, budget, hs, category, plan, insight, recs });
 
   const scenarios = useMemo(() => ([
     { name: "Basic", cost: computeEstimate({ ...inputs, quality: "Basic" }).total },
@@ -479,20 +486,42 @@ function Dashboard({ inputs, setInputs, onEdit }: { inputs: Inputs; setInputs: (
         </div>
       </div>
 
-      {/* Recommendations */}
-      <div className="mt-8">
-        <div className="flex items-center gap-2 mb-4">
-          <Lightbulb className="w-5 h-5 text-primary" />
-          <h2 className="font-display text-xl font-bold">Smart Recommendations</h2>
-        </div>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <RecCard title="Budget Advice" tone="blue" items={recs.budgetAdvice} />
-          <RecCard title="Design Advice" tone="indigo" items={recs.design} />
-          <RecCard title="Material Suggestions" tone="cyan" items={recs.materials} />
-          <RecCard title="Cost Saving Tips" tone="sky" items={recs.savings} />
-          <RecCard title="Positive Highlights" tone="emerald" items={recs.positive} />
+      {/* Planning score + House size insight */}
+      <div className="mt-8 grid lg:grid-cols-3 gap-6">
+        <PlanningScoreCard score={plan.score} tier={plan.tier} />
+        <div className="lg:col-span-2 rounded-3xl bg-card border border-border p-6 md:p-8">
+          <div className="flex items-center gap-2 mb-3">
+            <Home className="w-5 h-5 text-primary" />
+            <h2 className="font-display text-xl font-bold">House Size Insight</h2>
+          </div>
+          <div className="flex flex-wrap items-baseline gap-x-3">
+            <div className="font-display text-2xl font-extrabold">{insight.label}</div>
+            <div className="text-sm text-muted-foreground">· {inputs.builtUpArea} sqft</div>
+          </div>
+          <p className="text-sm text-muted-foreground mt-2">{insight.desc}</p>
+          <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <MiniStat label="Bedrooms" value={String(inputs.bedrooms)} />
+            <MiniStat label="Bathrooms" value={String(inputs.bathrooms)} />
+            <MiniStat label="Floors" value={String(inputs.floors)} />
+            <MiniStat label="Quality" value={inputs.quality} />
+          </div>
         </div>
       </div>
+
+      {/* Smart Recommendations */}
+      <div className="mt-10">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-primary to-accent-blue text-primary-foreground grid place-items-center shadow-lg shadow-primary/20">
+            <Lightbulb className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="font-display text-2xl md:text-3xl font-extrabold tracking-tight">Smart Construction Recommendations</h2>
+            <p className="text-sm text-muted-foreground">Personalized suggestions to optimize your construction cost, improve long-term value, and make informed planning decisions.</p>
+          </div>
+        </div>
+        <SmartRecList recs={recs} />
+      </div>
+
 
       {/* Add-ons */}
       <div className="mt-8 rounded-3xl bg-card border border-border p-6 md:p-8">
@@ -570,18 +599,12 @@ function Dashboard({ inputs, setInputs, onEdit }: { inputs: Inputs; setInputs: (
             <Gauge className="w-5 h-5 text-primary" />
             <h3 className="font-display font-bold">Report</h3>
           </div>
-          <div className="space-y-2">
-            {[
-              { icon: Download, label: "Download PDF" },
-              { icon: Printer, label: "Print Report" },
-              { icon: Share2, label: "Share Report" },
-            ].map((r) => (
-              <button key={r.label} disabled className="w-full flex items-center justify-between rounded-xl border border-border px-4 py-3 text-sm opacity-60 cursor-not-allowed">
-                <span className="flex items-center gap-2"><r.icon className="w-4 h-4" />{r.label}</span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">Coming soon</span>
-              </button>
-            ))}
-          </div>
+          <p className="text-xs text-muted-foreground mb-4">Download a full PDF report of your estimate, budget analysis, stage-wise breakdown and smart recommendations.</p>
+          <button onClick={downloadPdf} className="w-full flex items-center justify-between rounded-xl bg-gradient-to-r from-primary to-accent-blue text-primary-foreground px-4 py-3 text-sm font-semibold hover:-translate-y-0.5 transition shadow-lg shadow-primary/20">
+            <span className="flex items-center gap-2"><Download className="w-4 h-4" /> Download PDF Report</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
+          <div className="mt-3 text-xs text-muted-foreground">Includes all dashboard insights in a printable format.</div>
         </div>
       </div>
     </section>
@@ -695,25 +718,287 @@ function BudgetTile({ label, value, tone }: { label: string; value: string; tone
   );
 }
 
-function RecCard({ title, items, tone }: { title: string; items: string[]; tone: "blue" | "indigo" | "cyan" | "sky" | "emerald" }) {
-  if (!items.length) return null;
-  const bg = {
-    blue: "from-blue-500/10 to-blue-500/0",
-    indigo: "from-indigo-500/10 to-indigo-500/0",
-    cyan: "from-cyan-500/10 to-cyan-500/0",
-    sky: "from-sky-500/10 to-sky-500/0",
-    emerald: "from-emerald-500/10 to-emerald-500/0",
-  }[tone];
+function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className={`rounded-3xl bg-gradient-to-br ${bg} bg-card border border-border p-5`}>
-      <div className="font-display font-bold mb-3">{title}</div>
-      <ul className="space-y-2 text-sm">
-        {items.map((t, i) => (
-          <li key={i} className="flex gap-2"><Check className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" /><span className="text-muted-foreground">{t}</span></li>
-        ))}
-      </ul>
+    <div className="rounded-2xl border border-border bg-background/60 p-3">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="font-display font-bold text-base mt-0.5">{value}</div>
     </div>
   );
+}
+
+function PlanningScoreCard({ score, tier }: { score: number; tier: string }) {
+  const [display, setDisplay] = useState(0);
+  useEffect(() => {
+    const start = performance.now();
+    const dur = 1200;
+    let raf = 0;
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - start) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setDisplay(Math.round(eased * score));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [score]);
+
+  const R = 54;
+  const C = 2 * Math.PI * R;
+  const offset = C - (display / 100) * C;
+  const color =
+    score >= 95 ? "#059669" :
+    score >= 80 ? "#2563eb" :
+    score >= 65 ? "#d97706" : "#dc2626";
+
+  return (
+    <div className="rounded-3xl bg-card border border-border p-6 md:p-8 flex flex-col items-center text-center">
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">Construction Planning Score</div>
+      <div className="relative mt-4 w-40 h-40">
+        <svg viewBox="0 0 128 128" className="w-full h-full -rotate-90">
+          <circle cx="64" cy="64" r={R} fill="none" stroke="var(--muted)" strokeWidth="12" />
+          <circle
+            cx="64" cy="64" r={R} fill="none" stroke={color} strokeWidth="12"
+            strokeLinecap="round" strokeDasharray={C} strokeDashoffset={offset}
+            style={{ transition: "stroke-dashoffset 60ms linear" }}
+          />
+        </svg>
+        <div className="absolute inset-0 grid place-items-center">
+          <div>
+            <div className="font-display text-4xl font-extrabold" style={{ color }}>{display}</div>
+            <div className="text-xs text-muted-foreground">out of 100</div>
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 font-display font-bold text-lg" style={{ color }}>{tier}</div>
+      <div className="mt-1 text-xs text-muted-foreground max-w-xs">Composite of budget sufficiency, area efficiency, floor count, quality and add-on balance.</div>
+    </div>
+  );
+}
+
+const REC_ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
+  AlertTriangle, Ruler, Building, Sun, Car, ChefHat, Grid3x3, Award, Home, Clock,
+  PartyPopper, Wallet, Fence, Cctv, Cpu, Layers, Droplet, CheckCircle2,
+  TrendingUp, Users,
+};
+
+function SmartRecList({ recs }: { recs: SmartRec[] }) {
+  const [filter, setFilter] = useState<"all" | "warning" | "optimization" | "upgrade" | "positive" | "risk">("all");
+  const filtered = filter === "all" ? recs : recs.filter(r => r.category === filter);
+  const counts = {
+    all: recs.length,
+    warning: recs.filter(r => r.category === "warning").length,
+    optimization: recs.filter(r => r.category === "optimization").length,
+    upgrade: recs.filter(r => r.category === "upgrade").length,
+    positive: recs.filter(r => r.category === "positive").length,
+    risk: recs.filter(r => r.category === "risk").length,
+  };
+  const tabs: { key: typeof filter; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "warning", label: "Warnings" },
+    { key: "optimization", label: "Optimizations" },
+    { key: "upgrade", label: "Upgrades" },
+    { key: "positive", label: "Positive" },
+    { key: "risk", label: "Risks" },
+  ];
+  return (
+    <>
+      <div className="flex flex-wrap gap-2 mt-5 mb-5">
+        {tabs.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setFilter(t.key)}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold border transition ${filter === t.key ? "bg-primary text-primary-foreground border-primary shadow-sm" : "bg-card text-muted-foreground border-border hover:text-foreground hover:border-primary/40"}`}
+          >
+            {t.label}
+            <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${filter === t.key ? "bg-white/20" : "bg-muted"}`}>{counts[t.key]}</span>
+          </button>
+        ))}
+      </div>
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filtered.map((r, idx) => (
+          <SmartRecCard key={r.id} rec={r} delay={idx * 60} />
+        ))}
+      </div>
+    </>
+  );
+}
+
+const CATEGORY_STYLES: Record<RecCategory, { border: string; iconBg: string; iconFg: string; badge: string; ring: string }> = {
+  warning:      { border: "border-red-500/30 hover:border-red-500/60",     iconBg: "bg-red-500/10",     iconFg: "text-red-600",     badge: "bg-red-500/10 text-red-700 border-red-500/20",         ring: "ring-red-500/10" },
+  optimization: { border: "border-amber-500/30 hover:border-amber-500/60", iconBg: "bg-amber-500/10",   iconFg: "text-amber-600",   badge: "bg-amber-500/10 text-amber-700 border-amber-500/20",   ring: "ring-amber-500/10" },
+  upgrade:      { border: "border-blue-500/30 hover:border-blue-500/60",   iconBg: "bg-blue-500/10",    iconFg: "text-blue-600",    badge: "bg-blue-500/10 text-blue-700 border-blue-500/20",       ring: "ring-blue-500/10" },
+  positive:     { border: "border-emerald-500/30 hover:border-emerald-500/60", iconBg: "bg-emerald-500/10", iconFg: "text-emerald-600", badge: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20", ring: "ring-emerald-500/10" },
+  insight:      { border: "border-sky-500/30 hover:border-sky-500/60",     iconBg: "bg-sky-500/10",     iconFg: "text-sky-600",     badge: "bg-sky-500/10 text-sky-700 border-sky-500/20",         ring: "ring-sky-500/10" },
+  risk:         { border: "border-slate-400/40 hover:border-slate-500/60", iconBg: "bg-slate-500/10",   iconFg: "text-slate-700",   badge: "bg-slate-500/10 text-slate-700 border-slate-500/20",   ring: "ring-slate-500/10" },
+};
+
+type RecCategory = SmartRec["category"];
+
+function SmartRecCard({ rec, delay }: { rec: SmartRec; delay: number }) {
+  const Icon = REC_ICON_MAP[rec.icon] ?? Lightbulb;
+  const s = CATEGORY_STYLES[rec.category];
+  const [open, setOpen] = useState(false);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(true), delay);
+    return () => clearTimeout(t);
+  }, [delay]);
+
+  const priorityStyle =
+    rec.priority === "High"   ? "bg-red-500/10 text-red-700 border-red-500/20" :
+    rec.priority === "Medium" ? "bg-amber-500/10 text-amber-700 border-amber-500/20" :
+                                "bg-slate-500/10 text-slate-700 border-slate-500/20";
+
+  return (
+    <div
+      className={`group rounded-3xl bg-card border ${s.border} p-5 transition-all duration-500 hover:-translate-y-1 hover:shadow-xl ${visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-3"}`}
+    >
+      <div className="flex items-start gap-3">
+        <div className={`shrink-0 w-11 h-11 rounded-2xl ${s.iconBg} ${s.iconFg} grid place-items-center ring-8 ${s.ring}`}>
+          <Icon className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+            <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border ${s.badge}`}>{rec.badge}</span>
+            <span className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border ${priorityStyle}`}>{rec.priority}</span>
+          </div>
+          <div className="font-display font-bold text-[15px] leading-snug">{rec.title}</div>
+        </div>
+      </div>
+      <p className={`text-sm text-muted-foreground mt-3 ${open ? "" : "line-clamp-2"}`}>{rec.description}</p>
+      <div className="mt-4 flex items-center justify-between">
+        <div className={`inline-flex items-center gap-1.5 text-xs font-semibold ${s.iconFg}`}>
+          <IndianRupee className="w-3.5 h-3.5" /> {rec.impact}
+        </div>
+        <button onClick={() => setOpen(o => !o)} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+          {open ? "Less" : "More"} <ChevronDown className={`w-3.5 h-3.5 transition ${open ? "rotate-180" : ""}`} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- PDF report ---------------- */
+type ReportData = {
+  inputs: Inputs;
+  est: ReturnType<typeof computeEstimate>;
+  stages: ReturnType<typeof stageBreakdown>;
+  budget: ReturnType<typeof budgetAnalysis>;
+  hs: number;
+  category: string;
+  plan: { score: number; tier: string };
+  insight: { label: string; desc: string };
+  recs: SmartRec[];
+};
+
+function generateReportPdf(d: ReportData) {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = 40;
+  let y = M;
+
+  const line = (h = 14) => { y += h; if (y > H - M) { doc.addPage(); y = M; } };
+  const text = (s: string, size = 11, bold = false, color: [number, number, number] = [30, 41, 59]) => {
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.setFontSize(size);
+    doc.setTextColor(...color);
+    const lines = doc.splitTextToSize(s, W - M * 2);
+    for (const ln of lines) {
+      if (y > H - M) { doc.addPage(); y = M; }
+      doc.text(ln, M, y);
+      y += size * 1.25;
+    }
+  };
+  const kv = (k: string, v: string) => {
+    if (y > H - M) { doc.addPage(); y = M; }
+    doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.setTextColor(100, 116, 139);
+    doc.text(k, M, y);
+    doc.setFont("helvetica", "bold"); doc.setTextColor(15, 23, 42);
+    doc.text(v, W - M, y, { align: "right" });
+    y += 16;
+  };
+  const rule = () => {
+    if (y > H - M) { doc.addPage(); y = M; }
+    doc.setDrawColor(226, 232, 240); doc.line(M, y, W - M, y); y += 12;
+  };
+  const heading = (s: string) => { line(6); text(s, 14, true, [37, 99, 235]); rule(); };
+
+  // Header band
+  doc.setFillColor(37, 99, 235);
+  doc.rect(0, 0, W, 80, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(20);
+  doc.text("Kerala Home Cost Estimator", M, 40);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(11);
+  doc.text("Smart House Construction Planning Report", M, 60);
+  doc.setFontSize(9);
+  doc.text(new Date().toLocaleString("en-IN"), W - M, 40, { align: "right" });
+  y = 110;
+
+  // Summary
+  text(`${d.category} · ${inr(d.est.total)}`, 18, true, [15, 23, 42]);
+  text(`${d.inputs.district} · ${d.inputs.builtUpArea} sqft · ${d.inputs.bedrooms} BHK · ${d.inputs.floors} floor(s)`, 11, false, [100, 116, 139]);
+
+  heading("Cost Summary");
+  kv("Estimated Total Cost", inr(d.est.total));
+  kv("Expected Range", `${inr(d.est.low)} – ${inr(d.est.high)}`);
+  kv("Cost per sqft", inr(d.est.perSqft));
+  kv("Base Construction", inr(d.est.base));
+  kv("Add-ons Total", inr(d.est.addons));
+  kv("Construction Duration", `${d.est.months - 1}–${d.est.months + 1} months`);
+  kv("Model Confidence", `${Math.round(d.est.confidence * 100)}%  (R² ${d.est.r2})`);
+
+  heading("Budget Analysis");
+  kv("Available Budget", inr(d.inputs.budget));
+  kv("Predicted Cost", inr(d.est.total));
+  kv(d.budget.diff >= 0 ? "Surplus" : "Deficit", inr(Math.abs(d.budget.diff)));
+  kv("Utilization", `${d.budget.utilization}%`);
+  kv("Status", d.budget.status === "within" ? "Within Budget" : d.budget.status === "tight" ? "Tight" : "Short");
+
+  heading("Planning Score");
+  kv("Construction Planning Score", `${d.plan.score} / 100`);
+  kv("Planning Tier", d.plan.tier);
+  kv("Health Score", `${d.hs} / 100`);
+  kv("House Category", d.insight.label);
+  text(d.insight.desc, 10, false, [100, 116, 139]);
+
+  heading("Stage-wise Cost Breakdown");
+  d.stages.forEach(s => {
+    kv(`${s.label} (${Math.round(s.pct * 100)}%)`, inr(s.cost));
+  });
+
+  heading("Configuration");
+  kv("District", d.inputs.district);
+  kv("Built-up Area", `${d.inputs.builtUpArea} sqft`);
+  kv("Plot Size", `${d.inputs.plotSize} cents`);
+  kv("Bedrooms / Bathrooms", `${d.inputs.bedrooms} / ${d.inputs.bathrooms}`);
+  kv("Floors", String(d.inputs.floors));
+  kv("Parking / Balconies", `${d.inputs.parking} / ${d.inputs.balconies}`);
+  kv("Kitchen", d.inputs.kitchen);
+  kv("Quality", d.inputs.quality);
+  kv("Roof", d.inputs.roof);
+  kv("Flooring", d.inputs.flooring);
+  if (d.inputs.addons.length) {
+    kv("Add-ons", d.inputs.addons.map(k => ADDONS.find(a => a.key === k)?.label).filter(Boolean).join(", "));
+  }
+
+  heading("Smart Recommendations");
+  d.recs.forEach(r => {
+    if (y > H - M - 40) { doc.addPage(); y = M; }
+    text(`[${r.priority}] ${r.badge} — ${r.title}`, 11, true, [15, 23, 42]);
+    text(r.description, 10, false, [71, 85, 105]);
+    text(`Impact: ${r.impact}`, 10, true, [37, 99, 235]);
+    line(4);
+  });
+
+  // Footer on last page
+  doc.setFontSize(9);
+  doc.setTextColor(148, 163, 184);
+  doc.text("Generated by Kerala Home Cost Estimator · For planning reference only.", M, H - 20);
+
+  doc.save(`construction-estimate-${d.inputs.district}-${Date.now()}.pdf`);
 }
 
 function Footer() {
