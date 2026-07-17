@@ -486,20 +486,42 @@ function Dashboard({ inputs, setInputs, onEdit }: { inputs: Inputs; setInputs: (
         </div>
       </div>
 
-      {/* Recommendations */}
-      <div className="mt-8">
-        <div className="flex items-center gap-2 mb-4">
-          <Lightbulb className="w-5 h-5 text-primary" />
-          <h2 className="font-display text-xl font-bold">Smart Recommendations</h2>
-        </div>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <RecCard title="Budget Advice" tone="blue" items={recs.budgetAdvice} />
-          <RecCard title="Design Advice" tone="indigo" items={recs.design} />
-          <RecCard title="Material Suggestions" tone="cyan" items={recs.materials} />
-          <RecCard title="Cost Saving Tips" tone="sky" items={recs.savings} />
-          <RecCard title="Positive Highlights" tone="emerald" items={recs.positive} />
+      {/* Planning score + House size insight */}
+      <div className="mt-8 grid lg:grid-cols-3 gap-6">
+        <PlanningScoreCard score={plan.score} tier={plan.tier} />
+        <div className="lg:col-span-2 rounded-3xl bg-card border border-border p-6 md:p-8">
+          <div className="flex items-center gap-2 mb-3">
+            <Home className="w-5 h-5 text-primary" />
+            <h2 className="font-display text-xl font-bold">House Size Insight</h2>
+          </div>
+          <div className="flex flex-wrap items-baseline gap-x-3">
+            <div className="font-display text-2xl font-extrabold">{insight.label}</div>
+            <div className="text-sm text-muted-foreground">· {inputs.builtUpArea} sqft</div>
+          </div>
+          <p className="text-sm text-muted-foreground mt-2">{insight.desc}</p>
+          <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <MiniStat label="Bedrooms" value={String(inputs.bedrooms)} />
+            <MiniStat label="Bathrooms" value={String(inputs.bathrooms)} />
+            <MiniStat label="Floors" value={String(inputs.floors)} />
+            <MiniStat label="Quality" value={inputs.quality} />
+          </div>
         </div>
       </div>
+
+      {/* Smart Recommendations */}
+      <div className="mt-10">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-primary to-accent-blue text-primary-foreground grid place-items-center shadow-lg shadow-primary/20">
+            <Lightbulb className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="font-display text-2xl md:text-3xl font-extrabold tracking-tight">Smart Construction Recommendations</h2>
+            <p className="text-sm text-muted-foreground">Personalized suggestions to optimize your construction cost, improve long-term value, and make informed planning decisions.</p>
+          </div>
+        </div>
+        <SmartRecList recs={recs} />
+      </div>
+
 
       {/* Add-ons */}
       <div className="mt-8 rounded-3xl bg-card border border-border p-6 md:p-8">
