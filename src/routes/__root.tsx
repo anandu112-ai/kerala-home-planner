@@ -77,14 +77,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
+      { title: "Kerala Home Cost Estimator — Smart Construction Planner" },
+      { name: "description", content: "Predict Kerala house construction cost with ML-powered planning, budgeting, stage estimates and smart recommendations." },
       { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { property: "og:title", content: "Kerala Home Cost Estimator — Smart Construction Planner" },
+      { property: "og:description", content: "Predict Kerala house construction cost with ML-powered planning, budgeting, stage estimates and smart recommendations." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Kerala Home Cost Estimator — Smart Construction Planner" },
+      { name: "twitter:description", content: "Predict Kerala house construction cost with ML-powered planning, budgeting, stage estimates and smart recommendations." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/26b68b2a-f312-4d5b-a769-0ab05ad5f7d9/id-preview-fcec37a4--efa0c813-ed21-47fd-8575-7d89e3ef93c0.lovable.app-1784305871390.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/26b68b2a-f312-4d5b-a769-0ab05ad5f7d9/id-preview-fcec37a4--efa0c813-ed21-47fd-8575-7d89e3ef93c0.lovable.app-1784305871390.png" },
     ],
     links: [
       {

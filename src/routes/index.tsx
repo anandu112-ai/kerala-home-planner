@@ -24,8 +24,8 @@ export const Route = createFileRoute("/")({
     meta: [
       { title: "Kerala Home Cost Estimator — Smart Construction Planner" },
       { name: "description", content: "Predict Kerala house construction cost with ML-powered planning, budgeting, stage estimates and smart recommendations." },
-      { property: "og:title", content: "Kerala Home Cost Estimator" },
-      { property: "og:description", content: "ML-powered construction cost planning for Kerala homes." },
+      { property: "og:title", content: "Kerala Home Cost Estimator — Smart Construction Planner" },
+      { property: "og:description", content: "Predict Kerala house construction cost with ML-powered planning, budgeting, stage estimates and smart recommendations." },
       { property: "og:type", content: "website" },
     ],
   }),
