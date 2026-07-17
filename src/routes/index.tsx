@@ -5,7 +5,8 @@ import {
   Lightbulb, Calculator, Layers, ArrowRight, ArrowLeft, Check, Sparkles,
   Fence, DoorOpen, Car, Droplet, Waves, Sun, Sofa, Trees, Cpu, Cctv,
   Zap, Grid3x3, Paintbrush, MapPin, Ruler, Bed, Bath, Building,
-  IndianRupee, Gauge, ChartPie, Download, Printer, Share2,
+  IndianRupee, Gauge, ChartPie, Download,
+  AlertTriangle, PartyPopper, CheckCircle2, ChefHat, Award, Users, ChevronDown,
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
@@ -13,8 +14,10 @@ import {
 } from "recharts";
 import {
   DISTRICTS, ADDONS, computeEstimate, stageBreakdown, budgetAnalysis,
-  healthScore, houseCategory, recommendations, inr, type Inputs,
+  healthScore, houseCategory, smartRecommendations, houseSizeInsight, planningScore,
+  inr, type Inputs, type SmartRec,
 } from "@/lib/estimator";
+import jsPDF from "jspdf";
 
 export const Route = createFileRoute("/")({
   head: () => ({
