@@ -1,5 +1,9 @@
+import logging
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
+logger = logging.getLogger("kerala_home_planner")
 
 from app.config import settings
 from app.schemas import PredictionRequest
@@ -123,9 +127,11 @@ def predict(request: PredictionRequest):
 
         return response
 
-    except Exception as e:
+    except Exception:
+
+        logger.exception("Prediction failed")
 
         raise HTTPException(
             status_code=500,
-            detail=str(e)
+            detail="Failed to compute prediction"
         )
