@@ -173,6 +173,10 @@ function App() {
   const [dark, setDark] = useDarkMode();
   useScrollReveal();
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [view]);
+
   const handleSubmit = async () => {
     setView("loading");
     try {
@@ -378,6 +382,10 @@ function Wizard({ inputs, setInputs, onSubmit }: { inputs: Inputs; setInputs: (i
   const next = () => setStep(s => Math.min(steps.length - 1, s + 1));
   const prev = () => setStep(s => Math.max(0, s - 1));
   const upd = <K extends keyof Inputs,>(k: K, v: Inputs[K]) => setInputs({ ...inputs, [k]: v });
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [step]);
 
   return (
     <section className="max-w-4xl mx-auto px-6 py-12">
@@ -638,31 +646,28 @@ function Dashboard({ inputs, setInputs, apiResult, onEdit }: { inputs: Inputs; s
       <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
         <div>
           <div className="text-sm text-muted-foreground">
-            Estimate for {inputs.district} · {inputs.builtUpArea} sqft
+            Estimate for {inputs.district} · {inputs.builtUpArea} sqft · <span className="font-medium text-foreground">{category}</span>
             {apiResult && <span className="ml-2 inline-flex items-center gap-1 text-emerald-600 font-medium"><BadgeCheck className="w-3.5 h-3.5" />ML Prediction</span>}
           </div>
           <h1 className="font-display text-3xl md:text-4xl font-extrabold tracking-tight">Your Construction Dashboard</h1>
         </div>
-        <button onClick={onEdit} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium hover:bg-accent transition">
-          Edit inputs
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={onEdit} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium hover:bg-accent transition">
+            Edit inputs
+          </button>
+          <button onClick={downloadPdf} className="inline-flex items-center gap-1.5 rounded-full bg-primary text-primary-foreground px-4 py-2 text-sm font-semibold hover:opacity-90 transition shadow-sm">
+            <Download className="w-4 h-4" /> Download PDF
+          </button>
+        </div>
       </div>
 
       {/* KPIs */}
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard gradient icon={IndianRupee} label="Estimated Cost" value={inr(mlTotal)} sub={apiResult ? "ML model prediction" : "Client-side estimate"} />
-        <KpiCard icon={BarChart3} label="Expected Range" value={`${inr(mlLow)} – ${inr(mlHigh)}`} sub="90% confidence band" />
+        <KpiCard icon={Ruler} label="Cost per sqft" value={inr(mlPerSqft)} sub="Based on built-up area" />
+        <KpiCard icon={Clock} label="Construction Duration" value={apiResult?.construction_time ?? `${mlMonths - 1}–${mlMonths + 1} months`} sub="Estimated timeframe" />
         <KpiCard icon={Wallet} label="Budget Status" value={budget.status === "within" ? "Within Budget" : budget.status === "tight" ? "Budget Tight" : "Budget Short"}
           sub={`Utilization ${budget.utilization}%`} tone={budget.status === "within" ? "good" : budget.status === "tight" ? "warn" : "bad"} />
-        <KpiCard icon={BadgeCheck} label="Model Accuracy" value={`${Math.round(mlAccuracy * 100)}%`} sub={`R² ${mlR2} · MAE ${inr(mlMae)}`} />
-      </div>
-
-      {/* Second row */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-        <StatCard icon={Ruler} label="Cost per sqft" value={inr(mlPerSqft)} />
-        <StatCard icon={Clock} label="Construction Duration" value={apiResult?.construction_time ?? `${mlMonths - 1}–${mlMonths + 1} months`} />
-        <StatCard icon={Home} label="House Category" value={category} />
-        <HealthCard score={hs} />
       </div>
 
       {/* Budget analysis */}
@@ -689,41 +694,16 @@ function Dashboard({ inputs, setInputs, apiResult, onEdit }: { inputs: Inputs; s
       </div>
 
       {/* Stage distribution — DETAILED BLUE PIE */}
-      <div className="mt-8 grid lg:grid-cols-5 gap-6">
-        <div className="lg:col-span-3 rounded-3xl bg-card border border-border p-6 md:p-8">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <ChartPie className="w-5 h-5 text-primary" />
-              <h2 className="font-display text-xl font-bold">Construction Stage Distribution</h2>
-            </div>
-            <div className="text-xs text-muted-foreground">Base of {inr(mlBase)}</div>
+      <div className="mt-8 rounded-3xl bg-card border border-border p-6 md:p-8">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <ChartPie className="w-5 h-5 text-primary" />
+            <h2 className="font-display text-xl font-bold">Construction Stage Distribution</h2>
           </div>
-          <p className="text-sm text-muted-foreground mb-4">How your base construction cost is split across stages of the build.</p>
-          <StageDistributionPie stages={stages} total={mlBase} />
+          <div className="text-xs text-muted-foreground">Base of {inr(mlBase)}</div>
         </div>
-        <div className="lg:col-span-2 rounded-3xl bg-card border border-border p-6 md:p-8">
-          <div className="flex items-center gap-2 mb-4">
-            <Layers className="w-5 h-5 text-primary" />
-            <h2 className="font-display text-xl font-bold">Stage-wise Cost</h2>
-          </div>
-          <div className="space-y-4">
-            {stages.map((s, i) => (
-              <div key={s.key}>
-                <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2 font-medium">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: BLUE_SHADES[i] }} />
-                    {s.label}
-                  </div>
-                  <div className="tabular-nums">{inr(s.cost)}</div>
-                </div>
-                <div className="mt-1.5 h-2 bg-muted rounded-full overflow-hidden">
-                  <div className="h-full rounded-full transition-all duration-700" style={{ width: `${s.pct * 100}%`, background: BLUE_SHADES[i] }} />
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">{Math.round(s.pct * 100)}% · {s.desc}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <p className="text-sm text-muted-foreground mb-4">How your base construction cost is split across stages of the build.</p>
+        <StageDistributionPie stages={stages} total={mlBase} />
       </div>
 
       {/* Planning score + House size insight */}
@@ -815,38 +795,6 @@ function Dashboard({ inputs, setInputs, apiResult, onEdit }: { inputs: Inputs; s
         </div>
       </div>
 
-      {/* Summary + Report */}
-      <div className="mt-8 grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 rounded-3xl bg-gradient-to-br from-primary to-accent-blue text-primary-foreground p-8">
-          <div className="text-sm opacity-80">Result Summary</div>
-          <div className="font-display text-3xl md:text-4xl font-extrabold mt-1">{category} · {inr(mlTotal)}</div>
-          <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              ["Estimated Cost", inr(mlTotal)],
-              ["Completion", apiResult?.construction_time ?? `${mlMonths - 1}–${mlMonths + 1} mo`],
-              ["Budget", budget.status === "within" ? "Within Budget" : budget.status === "tight" ? "Tight" : "Short"],
-              ["Model Accuracy", `${Math.round(mlAccuracy * 100)}%`],
-            ].map(([k, v]) => (
-              <div key={k} className="rounded-2xl bg-white/10 backdrop-blur p-4">
-                <div className="text-xs opacity-80">{k}</div>
-                <div className="font-display text-lg font-bold mt-0.5">{v}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="rounded-3xl bg-card border border-border p-6">
-          <div className="flex items-center gap-2 mb-3">
-            <Gauge className="w-5 h-5 text-primary" />
-            <h3 className="font-display font-bold">Report</h3>
-          </div>
-          <p className="text-xs text-muted-foreground mb-4">Download a full PDF report of your estimate, budget analysis, stage-wise breakdown and smart recommendations.</p>
-          <button onClick={downloadPdf} className="w-full flex items-center justify-between rounded-xl bg-gradient-to-r from-primary to-accent-blue text-primary-foreground px-4 py-3 text-sm font-semibold hover:-translate-y-0.5 transition shadow-lg shadow-primary/20">
-            <span className="flex items-center gap-2"><Download className="w-4 h-4" /> Download PDF Report</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
-          <div className="mt-3 text-xs text-muted-foreground">Includes all dashboard insights in a printable format.</div>
-        </div>
-      </div>
     </section>
   );
 }

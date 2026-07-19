@@ -367,7 +367,28 @@ st.markdown("""
 
 model = load_model()
 
-if not predict_btn:
+if 'predicted' not in st.session_state:
+    st.session_state.predicted = False
+
+if predict_btn:
+    st.session_state.predicted = True
+    # Scroll to top of the page on button click
+    st.components.v1.html(
+        """
+        <script>
+            var body = window.parent.document.querySelector(".main");
+            if (body) {
+                body.scrollTo({top: 0, behavior: 'smooth'});
+            } else {
+                window.parent.scrollTo({top: 0, behavior: 'smooth'});
+            }
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
+
+if not st.session_state.predicted:
     # Welcome / instruction state
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -423,15 +444,6 @@ k1.metric("🏗️ Estimated Total Cost",  fmt_inr(predicted),
 k2.metric("📏 Cost per sqft",          f"₹{per_sqft:,.0f}")
 k3.metric("⏱️ Construction Duration",  c_time)
 k4.metric("🏠 House Category",         category.split(" ")[0] + " " + category.split(" ")[1])
-
-st.markdown("")
-
-k5, k6, k7, k8 = st.columns(4)
-k5.metric("📉 Expected Minimum",  fmt_inr(cost_range[0]))
-k6.metric("📈 Expected Maximum",  fmt_inr(cost_range[1]))
-k7.metric("❤️ Health Score",      f"{hs}/100",
-          delta="Good" if hs >= 70 else "Needs Improvement")
-k8.metric("🎯 Model Accuracy",    "96%", delta="R² 0.91")
 
 st.divider()
 
@@ -498,51 +510,27 @@ st.divider()
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown('<p class="section-header">🧱 Construction Stage Breakdown</p>', unsafe_allow_html=True)
 
-sc1, sc2 = st.columns([1, 1])
-
-with sc1:
-    # Donut pie
-    pie = go.Figure(go.Pie(
-        labels=[s["stage"] for s in stages],
-        values=[s["cost"]  for s in stages],
-        hole=0.55,
-        marker=dict(colors=STAGE_COLORS, line=dict(color="white", width=2)),
-        textinfo="label+percent",
-        textfont=dict(size=12),
-        hovertemplate="<b>%{label}</b><br>Cost: ₹%{value:,.0f}<br>%{percent}<extra></extra>",
-    ))
-    pie.update_layout(
-        showlegend=False,
-        height=360,
-        margin=dict(t=30, b=10, l=10, r=10),
-        paper_bgcolor="white",
-        annotations=[dict(
-            text=f"<b>{fmt_inr(base_cost)}</b><br><span style='font-size:11px;color:#64748b'>Base cost</span>",
-            x=0.5, y=0.5, font_size=16, showarrow=False
-        )],
-    )
-    st.plotly_chart(pie, use_container_width=True, key="pie")
-
-with sc2:
-    # Horizontal bar chart
-    stage_df = pd.DataFrame(stages).sort_values("cost", ascending=True)
-    bar = px.bar(
-        stage_df, x="cost", y="stage", orientation="h",
-        text=stage_df["cost"].apply(fmt_inr),
-        color="stage",
-        color_discrete_sequence=STAGE_COLORS[::-1],
-    )
-    bar.update_traces(textposition="outside", marker_line_width=0)
-    bar.update_layout(
-        showlegend=False,
-        xaxis=dict(showticklabels=False, title=""),
-        yaxis=dict(title="", tickfont=dict(size=13)),
-        height=360,
-        margin=dict(t=20, b=10, l=10, r=60),
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-    )
-    st.plotly_chart(bar, use_container_width=True, key="bar")
+# Donut pie
+pie = go.Figure(go.Pie(
+    labels=[s["stage"] for s in stages],
+    values=[s["cost"]  for s in stages],
+    hole=0.55,
+    marker=dict(colors=STAGE_COLORS, line=dict(color="white", width=2)),
+    textinfo="label+percent",
+    textfont=dict(size=12),
+    hovertemplate="<b>%{label}</b><br>Cost: ₹%{value:,.0f}<br>%{percent}<extra></extra>",
+))
+pie.update_layout(
+    showlegend=True,
+    height=450,
+    margin=dict(t=30, b=10, l=10, r=10),
+    paper_bgcolor="white",
+    annotations=[dict(
+        text=f"<b>{fmt_inr(base_cost)}</b><br><span style='font-size:11px;color:#64748b'>Base cost</span>",
+        x=0.5, y=0.5, font_size=16, showarrow=False
+    )],
+)
+st.plotly_chart(pie, use_container_width=True, key="pie")
 
 st.divider()
 
@@ -626,39 +614,7 @@ for r in recs:
 
 st.divider()
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Full Summary card
-# ──────────────────────────────────────────────────────────────────────────────
-st.markdown('<p class="section-header">📋 Full Configuration Summary</p>', unsafe_allow_html=True)
 
-cfg1, cfg2, cfg3 = st.columns(3)
-with cfg1:
-    st.markdown(f"""
-    <div class="sub-card">
-    <b>📍 Location & Size</b><br>
-    District: {district}<br>
-    Built-up Area: {built_up_area} sqft<br>
-    Plot Size: {plot_size} cents<br>
-    Floors: {floors}
-    </div>""", unsafe_allow_html=True)
-with cfg2:
-    st.markdown(f"""
-    <div class="sub-card">
-    <b>🛏️ Layout</b><br>
-    Bedrooms: {bedrooms}<br>
-    Bathrooms: {bathrooms}<br>
-    Parking: {parking}<br>
-    Balconies: {balconies}
-    </div>""", unsafe_allow_html=True)
-with cfg3:
-    st.markdown(f"""
-    <div class="sub-card">
-    <b>🔧 Finishes</b><br>
-    Quality: {quality}<br>
-    Kitchen: {kitchen}<br>
-    Roof: {roof}<br>
-    Flooring: {flooring}
-    </div>""", unsafe_allow_html=True)
 
 # ── Footer ──────────────────────────────────────────────────────────────────
 st.markdown("""
