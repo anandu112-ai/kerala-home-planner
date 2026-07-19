@@ -30,3 +30,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local virtual environments / test environments
+test_env/
+
+# Local environment overrides — never commit secrets
+.env
