@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Kerala Home Planner API"
     API_VERSION: str = "v1"
 
-    MODEL_PATH: MODEL_PATH=House_Model.pkl
+    MODEL_PATH: str = "models/House_Model.pkl"
 
     FRONTEND_URL: str = "http://localhost:5173"
 
