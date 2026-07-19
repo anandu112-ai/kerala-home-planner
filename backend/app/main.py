@@ -127,9 +127,11 @@ def predict(request: PredictionRequest):
 
         return response
 
-    except Exception as e:
+    except Exception:
+
+        logger.exception("Prediction failed")
 
         raise HTTPException(
             status_code=500,
-            detail=str(e)
+            detail="Failed to compute prediction"
         )
