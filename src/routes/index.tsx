@@ -13,11 +13,51 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from "recharts";
 import {
-  DISTRICTS, ADDONS, computeEstimate, stageBreakdown, budgetAnalysis,
+  DISTRICTS, ADDONS, STAGES, computeEstimate, stageBreakdown, budgetAnalysis,
   healthScore, houseCategory, smartRecommendations, houseSizeInsight, planningScore,
   inr, type Inputs, type SmartRec,
 } from "@/lib/estimator";
 import jsPDF from "jspdf";
+import { createServerFn } from "@tanstack/react-start";
+import { toast, Toaster } from "sonner";
+
+export const getPrediction = createServerFn({ method: "POST" })
+  .validator((inputs: Inputs) => inputs)
+  .handler(async ({ data: inputs }) => {
+    const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
+
+    const payload = {
+      district: inputs.district,
+      built_up_area_sqft: inputs.builtUpArea,
+      plot_size_cents: inputs.plotSize,
+      bedrooms: inputs.bedrooms,
+      bathrooms: inputs.bathrooms,
+      floors: inputs.floors,
+      parking_spaces: inputs.parking,
+      balconies: inputs.balconies,
+      kitchen_type: inputs.kitchen,
+      quality: inputs.quality,
+      roof_type: inputs.roof,
+      flooring: inputs.flooring,
+      budget: inputs.budget,
+      addons: inputs.addons,
+    };
+
+    const res = await fetch(`${backendUrl}/predict`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "Unknown error");
+      throw new Error(`Backend returned status ${res.status}: ${errText}`);
+    }
+
+    return await res.json();
+  });
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -45,30 +85,57 @@ const ADDON_ICONS: Record<string, React.ComponentType<{ className?: string }>> =
   Fence, DoorOpen, Car, Droplet, Waves, Sun, Layers, Sofa, Trees, Cpu, Cctv,
 };
 
+// Shape of the JSON response from the FastAPI /predict endpoint
+type ApiResult = {
+  predicted_cost: number;
+  cost_range: { min: number; max: number };
+  model_accuracy: number;
+  cost_per_sqft: number;
+  house_category: string;
+  construction_time: string;
+  health_score: number;
+  budget: { status: string; surplus: number; deficit: number; utilization: number };
+  stage_breakdown: { stage: string; percentage: number; cost: number }[];
+  recommendations: { type: string; title: string; description: string; priority: string; estimated_cost_impact: string }[];
+  addons: { selected: { name: string; cost: number }[]; total_cost: number };
+} | null;
+
 function App() {
   const [view, setView] = useState<View>("landing");
   const [inputs, setInputs] = useState<Inputs>(initialInputs);
+  const [apiResult, setApiResult] = useState<ApiResult>(null);
+
+  const handleSubmit = async () => {
+    setView("loading");
+    try {
+      const result = await getPrediction({ data: inputs });
+      setApiResult(result as ApiResult);
+    } catch (err) {
+      console.error("ML prediction failed, using client-side estimate:", err);
+      setApiResult(null);
+      toast.error("Backend unavailable — showing client-side estimate.", { duration: 4000 });
+    }
+    setTimeout(() => setView("dashboard"), 2400);
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
+      <Toaster richColors position="top-right" />
       <Navbar onHome={() => setView("landing")} onStart={() => setView("wizard")} />
       {view === "landing" && <Landing onStart={() => setView("wizard")} />}
       {view === "wizard" && (
         <Wizard
           inputs={inputs}
           setInputs={setInputs}
-          onSubmit={() => {
-            setView("loading");
-            setTimeout(() => setView("dashboard"), 2400);
-          }}
+          onSubmit={handleSubmit}
         />
       )}
       {view === "loading" && <LoadingScreen />}
       {view === "dashboard" && (
-        <Dashboard inputs={inputs} setInputs={setInputs} onEdit={() => setView("wizard")} />
+        <Dashboard inputs={inputs} setInputs={setInputs} apiResult={apiResult} onEdit={() => setView("wizard")} />
       )}
       <Footer />
     </div>
@@ -141,7 +208,7 @@ function Landing({ onStart }: { onStart: () => void }) {
       <section id="features" className="max-w-7xl mx-auto px-6 py-20">
         <div className="text-center mb-14">
           <div className="text-sm font-medium text-primary">Everything you need</div>
-          <h2 className="font-display text-3xl md:text-4xl font-bold mt-2">Plan smarter, build with model_accuracy</h2>
+          <h2 className="font-display text-3xl md:text-4xl font-bold mt-2">Plan smarter, build with confidence</h2>
         </div>
         <div className="grid md:grid-cols-3 gap-5">
           {[
@@ -375,17 +442,69 @@ function LoadingScreen() {
 
 /* ---------------- DASHBOARD ---------------- */
 
-function Dashboard({ inputs, setInputs, onEdit }: { inputs: Inputs; setInputs: (i: Inputs) => void; onEdit: () => void }) {
+function Dashboard({ inputs, setInputs, apiResult, onEdit }: { inputs: Inputs; setInputs: (i: Inputs) => void; apiResult: ApiResult; onEdit: () => void }) {
+  // Client-side estimate (always available, used as fallback and for scenarios/recs)
   const est = useMemo(() => computeEstimate(inputs), [inputs]);
-  const stages = useMemo(() => stageBreakdown(est.base), [est.base]);
-  const budget = useMemo(() => budgetAnalysis(inputs.budget, est.total), [inputs.budget, est.total]);
-  const hs = useMemo(() => healthScore(inputs, est.total, inputs.budget), [inputs, est.total]);
-  const category = houseCategory(est.total);
-  const recs = useMemo(() => smartRecommendations(inputs, est.total, inputs.budget), [inputs, est.total]);
-  const plan = useMemo(() => planningScore(inputs, est.total, inputs.budget), [inputs, est.total]);
+
+  // Prefer ML-predicted cost from API when available
+  const mlTotal = apiResult?.predicted_cost ?? est.total;
+  const mlAddonsCost = apiResult?.addons.total_cost ?? est.addons;
+  const mlBase = mlTotal - mlAddonsCost;
+  const mlLow = apiResult?.cost_range.min ?? est.low;
+  const mlHigh = apiResult?.cost_range.max ?? est.high;
+  const mlPerSqft = apiResult?.cost_per_sqft ?? est.perSqft;
+  const mlMonths = est.months; // keep client-side months
+  const mlAccuracy = apiResult ? (apiResult.model_accuracy / 100) : est.model_accuracy;
+  const mlR2 = est.r2;
+  const mlMae = est.mae;
+
+  // Stage breakdown — use API stages if available, else client-side
+  const stages = useMemo(() => {
+    if (apiResult?.stage_breakdown?.length) {
+      return apiResult.stage_breakdown.map((s, i) => ({
+        key: STAGES[i]?.key ?? s.stage.toLowerCase(),
+        label: s.stage,
+        pct: s.percentage / 100,
+        cost: s.cost,
+        desc: STAGES[i]?.desc ?? "",
+      }));
+    }
+    return stageBreakdown(mlBase);
+  }, [apiResult, mlBase]);
+
+  // Budget — use API if available
+  const budget = useMemo(() => {
+    if (apiResult?.budget) {
+      const ab = apiResult.budget;
+      const status = ab.status === "Within Budget" ? "within" as const : ab.status === "Budget Tight" ? "tight" as const : "short" as const;
+      return { diff: ab.surplus - ab.deficit, utilization: ab.utilization, status };
+    }
+    return budgetAnalysis(inputs.budget, mlTotal);
+  }, [apiResult, inputs.budget, mlTotal]);
+
+  // Health score
+  const hs = apiResult?.health_score ?? healthScore(inputs, mlTotal, inputs.budget);
+  const category = apiResult?.house_category ?? houseCategory(mlTotal);
+
+  // Smart recommendations and planning score always use client-side (richer logic)
+  const recs = useMemo(() => smartRecommendations(inputs, mlTotal, inputs.budget), [inputs, mlTotal]);
+  const plan = useMemo(() => planningScore(inputs, mlTotal, inputs.budget), [inputs, mlTotal]);
   const insight = useMemo(() => houseSizeInsight(inputs.builtUpArea), [inputs.builtUpArea]);
 
-  const downloadPdf = () => generateReportPdf({ inputs, est, stages, budget, hs, category, plan, insight, recs });
+  // Build a merged est object for PDF generation
+  const mergedEst = {
+    ...est,
+    total: mlTotal,
+    base: mlBase,
+    addons: mlAddonsCost,
+    low: mlLow,
+    high: mlHigh,
+    perSqft: mlPerSqft,
+    months: mlMonths,
+    model_accuracy: mlAccuracy,
+  };
+
+  const downloadPdf = () => generateReportPdf({ inputs, est: mergedEst, stages, budget, hs, category, plan, insight, recs });
 
   const scenarios = useMemo(() => ([
     { name: "Basic", cost: computeEstimate({ ...inputs, quality: "Basic" }).total },
@@ -400,7 +519,10 @@ function Dashboard({ inputs, setInputs, onEdit }: { inputs: Inputs; setInputs: (
     <section className="max-w-7xl mx-auto px-6 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
         <div>
-          <div className="text-sm text-muted-foreground">Estimate for {inputs.district} · {inputs.builtUpArea} sqft</div>
+          <div className="text-sm text-muted-foreground">
+            Estimate for {inputs.district} · {inputs.builtUpArea} sqft
+            {apiResult && <span className="ml-2 inline-flex items-center gap-1 text-emerald-600 font-medium"><BadgeCheck className="w-3.5 h-3.5" />ML Prediction</span>}
+          </div>
           <h1 className="font-display text-3xl md:text-4xl font-extrabold tracking-tight">Your Construction Dashboard</h1>
         </div>
         <button onClick={onEdit} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2 text-sm font-medium hover:bg-accent transition">
@@ -410,17 +532,17 @@ function Dashboard({ inputs, setInputs, onEdit }: { inputs: Inputs; setInputs: (
 
       {/* KPIs */}
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard gradient icon={IndianRupee} label="Estimated Cost" value={inr(est.total)} sub="Linear regression prediction" />
-        <KpiCard icon={BarChart3} label="Expected Range" value={`${inr(est.low)} – ${inr(est.high)}`} sub="90% model_accuracy band" />
+        <KpiCard gradient icon={IndianRupee} label="Estimated Cost" value={inr(mlTotal)} sub={apiResult ? "ML model prediction" : "Client-side estimate"} />
+        <KpiCard icon={BarChart3} label="Expected Range" value={`${inr(mlLow)} – ${inr(mlHigh)}`} sub="90% confidence band" />
         <KpiCard icon={Wallet} label="Budget Status" value={budget.status === "within" ? "Within Budget" : budget.status === "tight" ? "Budget Tight" : "Budget Short"}
           sub={`Utilization ${budget.utilization}%`} tone={budget.status === "within" ? "good" : budget.status === "tight" ? "warn" : "bad"} />
-        <KpiCard icon={BadgeCheck} label="model_accuracy" value={`${Math.round(est.model_accuracy * 100)}%`} sub={`R² ${est.r2} · MAE ${inr(est.mae)}`} />
+        <KpiCard icon={BadgeCheck} label="Model Accuracy" value={`${Math.round(mlAccuracy * 100)}%`} sub={`R² ${mlR2} · MAE ${inr(mlMae)}`} />
       </div>
 
       {/* Second row */}
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
-        <StatCard icon={Ruler} label="Cost per sqft" value={inr(est.perSqft)} />
-        <StatCard icon={Clock} label="Construction Duration" value={`${est.months - 1}–${est.months + 1} months`} />
+        <StatCard icon={Ruler} label="Cost per sqft" value={inr(mlPerSqft)} />
+        <StatCard icon={Clock} label="Construction Duration" value={apiResult?.construction_time ?? `${mlMonths - 1}–${mlMonths + 1} months`} />
         <StatCard icon={Home} label="House Category" value={category} />
         <HealthCard score={hs} />
       </div>
@@ -433,7 +555,7 @@ function Dashboard({ inputs, setInputs, onEdit }: { inputs: Inputs; setInputs: (
         </div>
         <div className="grid md:grid-cols-4 gap-4">
           <BudgetTile label="Your Budget" value={inr(inputs.budget)} />
-          <BudgetTile label="Predicted Cost" value={inr(est.total)} />
+          <BudgetTile label="Predicted Cost" value={inr(mlTotal)} />
           <BudgetTile label={budget.diff >= 0 ? "Surplus" : "Deficit"} value={inr(Math.abs(budget.diff))} tone={budget.diff >= 0 ? "good" : "bad"} />
           <BudgetTile label="Utilization" value={`${budget.utilization}%`} tone={budget.status === "within" ? "good" : budget.status === "tight" ? "warn" : "bad"} />
         </div>
@@ -456,10 +578,10 @@ function Dashboard({ inputs, setInputs, onEdit }: { inputs: Inputs; setInputs: (
               <ChartPie className="w-5 h-5 text-primary" />
               <h2 className="font-display text-xl font-bold">Construction Stage Distribution</h2>
             </div>
-            <div className="text-xs text-muted-foreground">Base of {inr(est.base)}</div>
+            <div className="text-xs text-muted-foreground">Base of {inr(mlBase)}</div>
           </div>
           <p className="text-sm text-muted-foreground mb-4">How your base construction cost is split across stages of the build.</p>
-          <StageDistributionPie stages={stages} total={est.base} />
+          <StageDistributionPie stages={stages} total={mlBase} />
         </div>
         <div className="lg:col-span-2 rounded-3xl bg-card border border-border p-6 md:p-8">
           <div className="flex items-center gap-2 mb-4">
@@ -579,13 +701,13 @@ function Dashboard({ inputs, setInputs, onEdit }: { inputs: Inputs; setInputs: (
       <div className="mt-8 grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 rounded-3xl bg-gradient-to-br from-primary to-accent-blue text-primary-foreground p-8">
           <div className="text-sm opacity-80">Result Summary</div>
-          <div className="font-display text-3xl md:text-4xl font-extrabold mt-1">{category} · {inr(est.total)}</div>
+          <div className="font-display text-3xl md:text-4xl font-extrabold mt-1">{category} · {inr(mlTotal)}</div>
           <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              ["Estimated Cost", inr(est.total)],
-              ["Completion", `${est.months - 1}–${est.months + 1} mo`],
+              ["Estimated Cost", inr(mlTotal)],
+              ["Completion", apiResult?.construction_time ?? `${mlMonths - 1}–${mlMonths + 1} mo`],
               ["Budget", budget.status === "within" ? "Within Budget" : budget.status === "tight" ? "Tight" : "Short"],
-              ["model_accuracy", `${Math.round(est.model_accuracy * 100)}%`],
+              ["Model Accuracy", `${Math.round(mlAccuracy * 100)}%`],
             ].map(([k, v]) => (
               <div key={k} className="rounded-2xl bg-white/10 backdrop-blur p-4">
                 <div className="text-xs opacity-80">{k}</div>
@@ -948,7 +1070,7 @@ function generateReportPdf(d: ReportData) {
   kv("Base Construction", inr(d.est.base));
   kv("Add-ons Total", inr(d.est.addons));
   kv("Construction Duration", `${d.est.months - 1}–${d.est.months + 1} months`);
-  kv("model_accuracy", `${Math.round(d.est.model_accuracy * 100)}%  (R² ${d.est.r2})`);
+  kv("Model Accuracy", `${Math.round(d.est.model_accuracy * 100)}%  (R² ${d.est.r2})`);
 
   heading("Budget Analysis");
   kv("Available Budget", inr(d.inputs.budget));

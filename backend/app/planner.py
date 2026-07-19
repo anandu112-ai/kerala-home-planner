@@ -152,6 +152,20 @@ def stage_breakdown(cost: float):
 # Optional Add-ons
 # -----------------------------
 
+ADDON_MAPPING = {
+    "compound": "Compound Wall",
+    "gate": "Gate",
+    "carporch": "Car Porch",
+    "borewell": "Borewell",
+    "septic": "Septic Tank",
+    "solar": "Solar Panels",
+    "ceiling": "False Ceiling",
+    "interior": "Interior Work",
+    "landscape": "Landscaping",
+    "smart": "Smart Home",
+    "cctv": "CCTV",
+}
+
 def addon_summary(selected_addons: List[str]):
 
     addon_list = []
@@ -160,10 +174,11 @@ def addon_summary(selected_addons: List[str]):
 
     for addon in selected_addons:
 
-        price = ADDON_COSTS.get(addon, 0)
+        mapped_name = ADDON_MAPPING.get(addon, addon)
+        price = ADDON_COSTS.get(mapped_name, 0)
 
         addon_list.append({
-            "name": addon,
+            "name": mapped_name,
             "cost": price
         })
 
