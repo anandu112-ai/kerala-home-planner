@@ -174,7 +174,10 @@ function App() {
   useScrollReveal();
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const t = setTimeout(() => {
+      window.scrollTo(0, 0);
+    }, 50);
+    return () => clearTimeout(t);
   }, [view]);
 
   const handleSubmit = async () => {
@@ -384,7 +387,10 @@ function Wizard({ inputs, setInputs, onSubmit }: { inputs: Inputs; setInputs: (i
   const upd = <K extends keyof Inputs,>(k: K, v: Inputs[K]) => setInputs({ ...inputs, [k]: v });
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    const t = setTimeout(() => {
+      window.scrollTo(0, 0);
+    }, 50);
+    return () => clearTimeout(t);
   }, [step]);
 
   return (
