@@ -75,7 +75,7 @@ def predict(request: PredictionRequest):
 
             "cost_range": calculate_cost_range(predicted_cost),
 
-            "confidence": 96.0,
+            "model_accuracy": 96.0,
 
             "cost_per_sqft": cost_per_sqft(
                 predicted_cost,

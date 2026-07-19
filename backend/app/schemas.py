@@ -48,7 +48,7 @@ class AddonCost(BaseModel):
 class PredictionResponse(BaseModel):
     predicted_cost: float
     cost_range: Dict[str, float]
-    confidence: float
+    model_accuracy: float
     cost_per_sqft: float
     house_category: str
     construction_time: str
