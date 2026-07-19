@@ -1,5 +1,9 @@
+import logging
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
+logger = logging.getLogger("kerala_home_planner")
 
 from app.config import settings
 from app.schemas import PredictionRequest
