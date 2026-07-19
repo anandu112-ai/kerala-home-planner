@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "start": "node .output/server/index.mjs",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "streamlit": "streamlit run streamlit_app/app.py"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
