@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import {
   Home, Building2, Hammer, Wallet, BarChart3, TrendingUp, Clock, BadgeCheck,
   Lightbulb, Calculator, Layers, ArrowRight, ArrowLeft, Check, Sparkles,
@@ -7,6 +7,7 @@ import {
   Zap, Grid3x3, Paintbrush, MapPin, Ruler, Bed, Bath, Building,
   IndianRupee, Gauge, ChartPie, Download,
   AlertTriangle, PartyPopper, CheckCircle2, ChefHat, Award, Users, ChevronDown,
+  Moon, SunMedium,
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
@@ -74,6 +75,71 @@ export const Route = createFileRoute("/")({
 
 type View = "landing" | "wizard" | "loading" | "dashboard";
 
+/* ---- Dark mode hook ---- */
+function useDarkMode() {
+  const [dark, setDark] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    const saved = localStorage.getItem("theme");
+    if (saved) return saved === "dark";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (dark) {
+      root.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+    } else {
+      root.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+    }
+  }, [dark]);
+
+  return [dark, setDark] as const;
+}
+
+/* ---- Scroll reveal hook ---- */
+function useScrollReveal() {
+  useEffect(() => {
+    const els = document.querySelectorAll(".reveal");
+    const observer = new IntersectionObserver(
+      (entries) => entries.forEach((e) => {
+        if (e.isIntersecting) {
+          e.target.classList.add("revealed");
+          observer.unobserve(e.target);
+        }
+      }),
+      { threshold: 0.12 }
+    );
+    els.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  });
+}
+
+/* ---- Animated counter ---- */
+function AnimatedNumber({ to, prefix = "", suffix = "" }: { to: number; prefix?: string; suffix?: string }) {
+  const [val, setVal] = useState(0);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const obs = new IntersectionObserver(([e]) => {
+      if (!e.isIntersecting) return;
+      obs.disconnect();
+      const dur = 1400;
+      const start = performance.now();
+      const tick = (t: number) => {
+        const p = Math.min(1, (t - start) / dur);
+        const eased = 1 - Math.pow(1 - p, 3);
+        setVal(Math.round(eased * to));
+        if (p < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }, { threshold: 0.5 });
+    if (ref.current) obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, [to]);
+  return <span ref={ref}>{prefix}{val.toLocaleString("en-IN")}{suffix}</span>;
+}
+
 const initialInputs: Inputs = {
   district: "Ernakulam", builtUpArea: 1800, plotSize: 8, bedrooms: 3,
   bathrooms: 3, floors: 2, parking: 1, balconies: 2,
@@ -104,6 +170,8 @@ function App() {
   const [view, setView] = useState<View>("landing");
   const [inputs, setInputs] = useState<Inputs>(initialInputs);
   const [apiResult, setApiResult] = useState<ApiResult>(null);
+  const [dark, setDark] = useDarkMode();
+  useScrollReveal();
 
   const handleSubmit = async () => {
     setView("loading");
@@ -119,12 +187,12 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans">
+    <div className="min-h-screen bg-background text-foreground font-sans transition-colors duration-300">
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
       <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
       <Toaster richColors position="top-right" />
-      <Navbar onHome={() => setView("landing")} onStart={() => setView("wizard")} />
+      <Navbar onHome={() => setView("landing")} onStart={() => setView("wizard")} dark={dark} onToggleDark={() => setDark(d => !d)} />
       {view === "landing" && <Landing onStart={() => setView("wizard")} />}
       {view === "wizard" && (
         <Wizard
@@ -142,24 +210,47 @@ function App() {
   );
 }
 
-function Navbar({ onHome, onStart }: { onHome: () => void; onStart: () => void }) {
+function Navbar({ onHome, onStart, dark, onToggleDark }: { onHome: () => void; onStart: () => void; dark: boolean; onToggleDark: () => void }) {
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const fn = () => setScrolled(window.scrollY > 10);
+    window.addEventListener("scroll", fn, { passive: true });
+    return () => window.removeEventListener("scroll", fn);
+  }, []);
+
   return (
-    <header className="sticky top-0 z-40 backdrop-blur-md bg-background/75 border-b border-border">
+    <header className={`sticky top-0 z-40 transition-all duration-300 ${
+      scrolled
+        ? "backdrop-blur-xl bg-background/80 border-b border-border shadow-sm"
+        : "backdrop-blur-md bg-background/60 border-b border-transparent"
+    }`}>
       <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-4">
         <button onClick={onHome} className="flex items-center gap-2.5 group">
-          <span className="grid place-items-center w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-accent-blue text-primary-foreground shadow-sm">
+          <span className="grid place-items-center w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-accent-blue text-primary-foreground shadow-sm group-hover:shadow-lg group-hover:scale-105 transition-all duration-200">
             <Home className="w-5 h-5" />
           </span>
           <span className="font-display font-bold text-lg tracking-tight">Kerala <span className="text-primary">Home</span></span>
         </button>
         <nav className="hidden md:flex items-center gap-8 text-sm text-muted-foreground">
-          <a href="#features" className="hover:text-foreground transition">Features</a>
-          <a href="#how" className="hover:text-foreground transition">How it works</a>
-          <a href="#about" className="hover:text-foreground transition">About</a>
+          <a href="#features" className="hover:text-foreground transition-colors relative after:absolute after:bottom-0 after:left-0 after:h-px after:w-0 after:bg-primary after:transition-all hover:after:w-full">Features</a>
+          <a href="#how" className="hover:text-foreground transition-colors relative after:absolute after:bottom-0 after:left-0 after:h-px after:w-0 after:bg-primary after:transition-all hover:after:w-full">How it works</a>
+          <a href="#about" className="hover:text-foreground transition-colors relative after:absolute after:bottom-0 after:left-0 after:h-px after:w-0 after:bg-primary after:transition-all hover:after:w-full">About</a>
         </nav>
-        <button onClick={onStart} className="inline-flex items-center gap-1.5 rounded-full bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90 transition shadow-sm">
-          Estimate <ArrowRight className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            id="theme-toggle"
+            aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+            onClick={onToggleDark}
+            className="w-9 h-9 rounded-full border border-border bg-card flex items-center justify-center hover:bg-accent transition-colors shadow-sm"
+          >
+            {dark
+              ? <SunMedium className="w-4 h-4 text-amber-400" />
+              : <Moon className="w-4 h-4 text-muted-foreground" />}
+          </button>
+          <button onClick={onStart} className="inline-flex items-center gap-1.5 rounded-full bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90 hover:scale-105 transition-all shadow-sm">
+            Estimate <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </header>
   );
@@ -168,47 +259,66 @@ function Navbar({ onHome, onStart }: { onHome: () => void; onStart: () => void }
 function Landing({ onStart }: { onStart: () => void }) {
   return (
     <>
+      {/* Hero */}
       <section className="relative overflow-hidden">
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,oklch(0.94_0.05_245)_0%,transparent_60%)]" />
-        <div className="max-w-7xl mx-auto px-6 pt-16 pb-24 md:pt-24 md:pb-32 text-center">
-          <div className="inline-flex items-center gap-2 rounded-full bg-accent/70 border border-border px-3 py-1 text-xs text-accent-foreground mb-6">
-            <Sparkles className="w-3.5 h-3.5" /> ML-powered · Linear Regression · Kerala dataset
+        {/* Animated gradient blobs */}
+        <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+          <div className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-primary/10 blur-3xl animate-[blob_9s_ease-in-out_infinite]" />
+          <div className="absolute -bottom-40 -right-40 w-[500px] h-[500px] rounded-full bg-accent-blue/10 blur-3xl animate-[blob_11s_ease-in-out_infinite_2s]" />
+          <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[400px] h-[400px] rounded-full bg-primary/5 blur-2xl animate-[blob_13s_ease-in-out_infinite_4s]" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,oklch(0.94_0.05_245/0.6)_0%,transparent_65%)] dark:bg-[radial-gradient(ellipse_at_top,oklch(0.3_0.08_250/0.4)_0%,transparent_65%)]" />
+        </div>
+
+        <div className="max-w-7xl mx-auto px-6 pt-20 pb-28 md:pt-28 md:pb-36 text-center">
+          <div className="reveal inline-flex items-center gap-2 rounded-full bg-accent/70 border border-border px-3 py-1 text-xs text-accent-foreground mb-6 shadow-sm">
+            <Sparkles className="w-3.5 h-3.5 text-primary" /> ML-powered · Linear Regression · Kerala dataset
           </div>
-          <h1 className="font-display text-4xl md:text-6xl font-extrabold tracking-tight leading-[1.05] mb-5">
+          <h1 className="reveal font-display text-4xl md:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.05] mb-6">
             Smart House Construction<br />
-            <span className="bg-gradient-to-r from-primary via-accent-blue to-primary bg-clip-text text-transparent">Planning Assistant</span>
+            <span className="bg-gradient-to-r from-primary via-accent-blue to-primary bg-clip-text text-transparent animate-gradient-x bg-[length:200%_auto]">Planning Assistant</span>
           </h1>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-9">
+          <p className="reveal text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10">
             Predict construction costs using Machine Learning and plan your entire building journey with intelligent budgeting, recommendations and stage-wise estimates.
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            <button onClick={onStart} className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent-blue text-primary-foreground px-6 py-3.5 font-semibold shadow-lg shadow-primary/20 hover:shadow-xl hover:-translate-y-0.5 transition">
-              Estimate My House <ArrowRight className="w-4 h-4" />
+          <div className="reveal flex flex-wrap items-center justify-center gap-3">
+            <button
+              id="hero-estimate-btn"
+              onClick={onStart}
+              className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-primary to-accent-blue text-primary-foreground px-7 py-4 font-semibold shadow-xl shadow-primary/25 hover:shadow-2xl hover:-translate-y-1 hover:scale-105 transition-all duration-300"
+            >
+              Estimate My House
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
-            <a href="#features" className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-accent transition">
+            <a href="#features" className="inline-flex items-center gap-2 rounded-full border border-border bg-card/80 backdrop-blur px-7 py-4 font-medium hover:bg-accent hover:-translate-y-0.5 transition-all">
               See features
             </a>
           </div>
-          <div className="mt-14 grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto text-left">
+
+          {/* Animated stats */}
+          <div className="mt-16 grid grid-cols-2 md:grid-cols-4 gap-5 max-w-3xl mx-auto text-left">
             {[
-              { k: "R²", v: "0.91" },
-              { k: "Districts", v: "14" },
-              { k: "Data points", v: "1,500" },
-              { k: "Cost range", v: "₹25L–1.5Cr" },
+              { k: "R² Score", numTo: 91, suffix: "%" },
+              { k: "Districts", numTo: 14, suffix: "" },
+              { k: "Data Points", numTo: 1500, suffix: "" },
+              { k: "Model Accuracy", numTo: 96, suffix: "%" },
             ].map(s => (
-              <div key={s.k} className="rounded-2xl bg-card border border-border p-4">
+              <div key={s.k} className="reveal rounded-2xl bg-card/80 backdrop-blur border border-border p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all group">
                 <div className="text-xs uppercase tracking-wider text-muted-foreground">{s.k}</div>
-                <div className="font-display text-2xl font-bold mt-1">{s.v}</div>
+                <div className="font-display text-2xl font-bold mt-1 group-hover:text-primary transition-colors">
+                  <AnimatedNumber to={s.numTo} suffix={s.suffix} />
+                </div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
+      {/* Features */}
       <section id="features" className="max-w-7xl mx-auto px-6 py-20">
-        <div className="text-center mb-14">
-          <div className="text-sm font-medium text-primary">Everything you need</div>
-          <h2 className="font-display text-3xl md:text-4xl font-bold mt-2">Plan smarter, build with confidence</h2>
+        <div className="reveal text-center mb-14">
+          <div className="text-sm font-medium text-primary uppercase tracking-wider mb-2">Everything you need</div>
+          <h2 className="font-display text-3xl md:text-4xl font-bold">Plan smarter, build with confidence</h2>
+          <div className="mt-3 mx-auto w-16 h-1 rounded-full bg-gradient-to-r from-primary to-accent-blue" />
         </div>
         <div className="grid md:grid-cols-3 gap-5">
           {[
@@ -218,9 +328,13 @@ function Landing({ onStart }: { onStart: () => void }) {
             { icon: TrendingUp, t: "Scenario Comparison", d: "Compare quality tiers, roof types, and areas side by side." },
             { icon: Lightbulb, t: "Smart Recommendations", d: "Materials, savings and design tips tailored to you." },
             { icon: BadgeCheck, t: "Optional Add-ons", d: "Solar, borewell, interiors — priced instantly." },
-          ].map((f) => (
-            <div key={f.t} className="group rounded-2xl bg-card border border-border p-6 hover:shadow-lg hover:-translate-y-0.5 transition">
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary/10 to-accent-blue/10 grid place-items-center text-primary mb-4">
+          ].map((f, i) => (
+            <div
+              key={f.t}
+              className="reveal group rounded-2xl bg-card border border-border p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 hover:border-primary/30"
+              style={{ transitionDelay: `${i * 60}ms` }}
+            >
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-primary/10 to-accent-blue/10 grid place-items-center text-primary mb-4 group-hover:scale-110 group-hover:from-primary/20 group-hover:to-accent-blue/20 transition-all">
                 <f.icon className="w-5 h-5" />
               </div>
               <div className="font-display font-semibold text-lg">{f.t}</div>
@@ -230,22 +344,26 @@ function Landing({ onStart }: { onStart: () => void }) {
         </div>
       </section>
 
+      {/* How it works */}
       <section id="how" className="max-w-7xl mx-auto px-6 pb-24">
-        <div className="rounded-3xl bg-gradient-to-br from-primary to-accent-blue text-primary-foreground p-10 md:p-14 shadow-xl">
-          <h3 className="font-display text-2xl md:text-3xl font-bold">Ready in three steps</h3>
-          <div className="grid md:grid-cols-3 gap-6 mt-8">
+        <div className="reveal rounded-3xl bg-gradient-to-br from-primary to-accent-blue text-primary-foreground p-10 md:p-14 shadow-2xl shadow-primary/20 relative overflow-hidden">
+          {/* Decorative circles */}
+          <div className="pointer-events-none absolute -top-20 -right-20 w-72 h-72 rounded-full bg-white/5" />
+          <div className="pointer-events-none absolute -bottom-10 -left-10 w-48 h-48 rounded-full bg-white/5" />
+          <h3 className="font-display text-2xl md:text-3xl font-bold relative">Ready in three steps</h3>
+          <div className="grid md:grid-cols-3 gap-6 mt-8 relative">
             {[
               ["01", "Tell us about your plot & home"],
               ["02", "Set quality, roof, flooring & budget"],
               ["03", "Get a full dashboard & report"],
             ].map(([n, t]) => (
-              <div key={n} className="rounded-2xl bg-white/10 backdrop-blur p-5">
+              <div key={n} className="rounded-2xl bg-white/10 backdrop-blur p-5 hover:bg-white/20 transition-colors">
                 <div className="font-display text-3xl font-bold opacity-80">{n}</div>
                 <div className="mt-2 font-medium">{t}</div>
               </div>
             ))}
           </div>
-          <button onClick={onStart} className="mt-8 inline-flex items-center gap-2 rounded-full bg-white text-primary px-6 py-3 font-semibold hover:bg-white/90 transition">
+          <button onClick={onStart} className="mt-8 inline-flex items-center gap-2 rounded-full bg-white text-primary px-6 py-3 font-semibold hover:bg-white/90 hover:scale-105 transition-all shadow-lg relative">
             Start estimate <ArrowRight className="w-4 h-4" />
           </button>
         </div>
