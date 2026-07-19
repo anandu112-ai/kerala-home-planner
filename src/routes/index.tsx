@@ -607,6 +607,7 @@ function Dashboard({ inputs, setInputs, apiResult, onEdit }: { inputs: Inputs; s
         pct: s.percentage / 100,
         cost: s.cost,
         desc: STAGES[i]?.desc ?? "",
+        icon: STAGES[i]?.icon ?? "Layers",
       }));
     }
     return stageBreakdown(mlBase);
