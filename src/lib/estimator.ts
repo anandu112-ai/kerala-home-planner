@@ -77,10 +77,10 @@ export function computeEstimate(i: Inputs) {
   const high = Math.round(total * 1.08);
   const perSqft = Math.round(base / Math.max(1, i.builtUpArea));
   const months = Math.max(6, Math.min(14, Math.round(i.builtUpArea / 350) + i.floors));
-  const confidence = 0.88 + (i.quality === "Standard" ? 0.06 : 0.03) + (i.builtUpArea > 800 && i.builtUpArea < 4500 ? 0.03 : 0);
+  const model_accuracy = 0.88 + (i.quality === "Standard" ? 0.06 : 0.03) + (i.builtUpArea > 800 && i.builtUpArea < 4500 ? 0.03 : 0);
   return {
     base, addons, total, low, high, perSqft, months,
-    confidence: Math.min(0.97, confidence),
+    model_accuracy: Math.min(0.97, model_accuracy),
     r2: 0.912, mae: 214300, rmse: 298700,
   };
 }

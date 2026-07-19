@@ -141,7 +141,7 @@ function Landing({ onStart }: { onStart: () => void }) {
       <section id="features" className="max-w-7xl mx-auto px-6 py-20">
         <div className="text-center mb-14">
           <div className="text-sm font-medium text-primary">Everything you need</div>
-          <h2 className="font-display text-3xl md:text-4xl font-bold mt-2">Plan smarter, build with confidence</h2>
+          <h2 className="font-display text-3xl md:text-4xl font-bold mt-2">Plan smarter, build with model_accuracy</h2>
         </div>
         <div className="grid md:grid-cols-3 gap-5">
           {[
@@ -411,10 +411,10 @@ function Dashboard({ inputs, setInputs, onEdit }: { inputs: Inputs; setInputs: (
       {/* KPIs */}
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard gradient icon={IndianRupee} label="Estimated Cost" value={inr(est.total)} sub="Linear regression prediction" />
-        <KpiCard icon={BarChart3} label="Expected Range" value={`${inr(est.low)} – ${inr(est.high)}`} sub="90% confidence band" />
+        <KpiCard icon={BarChart3} label="Expected Range" value={`${inr(est.low)} – ${inr(est.high)}`} sub="90% model_accuracy band" />
         <KpiCard icon={Wallet} label="Budget Status" value={budget.status === "within" ? "Within Budget" : budget.status === "tight" ? "Budget Tight" : "Budget Short"}
           sub={`Utilization ${budget.utilization}%`} tone={budget.status === "within" ? "good" : budget.status === "tight" ? "warn" : "bad"} />
-        <KpiCard icon={BadgeCheck} label="Model Confidence" value={`${Math.round(est.confidence * 100)}%`} sub={`R² ${est.r2} · MAE ${inr(est.mae)}`} />
+        <KpiCard icon={BadgeCheck} label="model_accuracy" value={`${Math.round(est.model_accuracy * 100)}%`} sub={`R² ${est.r2} · MAE ${inr(est.mae)}`} />
       </div>
 
       {/* Second row */}
@@ -585,7 +585,7 @@ function Dashboard({ inputs, setInputs, onEdit }: { inputs: Inputs; setInputs: (
               ["Estimated Cost", inr(est.total)],
               ["Completion", `${est.months - 1}–${est.months + 1} mo`],
               ["Budget", budget.status === "within" ? "Within Budget" : budget.status === "tight" ? "Tight" : "Short"],
-              ["Confidence", `${Math.round(est.confidence * 100)}%`],
+              ["model_accuracy", `${Math.round(est.model_accuracy * 100)}%`],
             ].map(([k, v]) => (
               <div key={k} className="rounded-2xl bg-white/10 backdrop-blur p-4">
                 <div className="text-xs opacity-80">{k}</div>
@@ -948,7 +948,7 @@ function generateReportPdf(d: ReportData) {
   kv("Base Construction", inr(d.est.base));
   kv("Add-ons Total", inr(d.est.addons));
   kv("Construction Duration", `${d.est.months - 1}–${d.est.months + 1} months`);
-  kv("Model Confidence", `${Math.round(d.est.confidence * 100)}%  (R² ${d.est.r2})`);
+  kv("model_accuracy", `${Math.round(d.est.model_accuracy * 100)}%  (R² ${d.est.r2})`);
 
   heading("Budget Analysis");
   kv("Available Budget", inr(d.inputs.budget));
