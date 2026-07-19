@@ -191,9 +191,8 @@ function App() {
       const result = await getPrediction({ data: inputs });
       setApiResult(result as ApiResult);
     } catch (err) {
-      console.error("ML prediction failed, using client-side estimate:", err);
+      console.warn("ML backend unreachable, using built-in estimate engine:", err);
       setApiResult(null);
-      toast.error("Backend unavailable — showing client-side estimate.", { duration: 4000 });
     }
     setTimeout(() => setView("dashboard"), 2400);
   };
@@ -608,6 +607,7 @@ function Dashboard({ inputs, setInputs, apiResult, onEdit }: { inputs: Inputs; s
         pct: s.percentage / 100,
         cost: s.cost,
         desc: STAGES[i]?.desc ?? "",
+        icon: STAGES[i]?.icon ?? "Layers",
       }));
     }
     return stageBreakdown(mlBase);
