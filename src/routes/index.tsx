@@ -26,6 +26,7 @@ export const getPrediction = createServerFn({ method: "POST" })
   .validator((inputs: Inputs) => inputs)
   .handler(async ({ data: inputs }) => {
     const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
+    console.log("getPrediction: Fetching prediction from backend URL:", backendUrl);
 
     const payload = {
       district: inputs.district,
@@ -176,6 +177,10 @@ function App() {
   useEffect(() => {
     const t = setTimeout(() => {
       window.scrollTo(0, 0);
+      if (typeof document !== "undefined") {
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }
     }, 50);
     return () => clearTimeout(t);
   }, [view]);
@@ -389,6 +394,10 @@ function Wizard({ inputs, setInputs, onSubmit }: { inputs: Inputs; setInputs: (i
   useEffect(() => {
     const t = setTimeout(() => {
       window.scrollTo(0, 0);
+      if (typeof document !== "undefined") {
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }
     }, 50);
     return () => clearTimeout(t);
   }, [step]);
