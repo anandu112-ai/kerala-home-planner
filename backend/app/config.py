@@ -7,7 +7,7 @@ class Settings(BaseSettings):
 
     # ML Model Path
     # Change this only if your model file location is different
-    MODEL_PATH: str = "models/kerala_house_cost_model.pkl"
+    MODEL_PATH: str = "models/House_Model.pkl"
 
     # Frontend URL
     FRONTEND_URL: str = "http://localhost:5173"
