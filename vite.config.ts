@@ -13,15 +13,13 @@ export default defineConfig({
     server: { entry: "server" },
   },
   // Target a standalone Node server for Railway/self-hosted deployments.
-  // Disable Rollup's internal-export mangling to avoid `__commonJSMin is not
-  // a function` at runtime — the beta Nitro's minifier can rename the helper
-  // in one chunk while leaving importers referencing the original name.
+  // `rollupConfig` disables internal-export mangling so the beta Nitro's
+  // minifier doesn't rename `__commonJSMin` in the runtime chunk while leaving
+  // importers referencing the original name (runtime TypeError otherwise).
   nitro: {
     preset: "node-server",
     rollupConfig: {
-      output: {
-        minifyInternalExports: false,
-      },
+      output: { minifyInternalExports: false },
     },
-  },
+  } as any,
 });
