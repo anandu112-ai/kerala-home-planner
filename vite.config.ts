@@ -12,4 +12,14 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Target a standalone Node server for Railway/self-hosted deployments.
+  // `rollupConfig` disables internal-export mangling so the beta Nitro's
+  // minifier doesn't rename `__commonJSMin` in the runtime chunk while leaving
+  // importers referencing the original name (runtime TypeError otherwise).
+  nitro: {
+    preset: "node-server",
+    rollupConfig: {
+      output: { minifyInternalExports: false },
+    },
+  } as any,
 });
