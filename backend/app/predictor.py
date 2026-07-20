@@ -9,14 +9,23 @@ class HouseCostPredictor:
     def __init__(self):
         self.model = None
 
+        # Resolve model path dynamically
+        model_path = settings.MODEL_PATH
+        if not os.path.exists(model_path):
+            # Try resolving relative to backend directory (parent of app directory)
+            backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            candidate = os.path.join(backend_dir, settings.MODEL_PATH)
+            if os.path.exists(candidate):
+                model_path = candidate
+
         print("========== MODEL DEBUG ==========")
         print("Current Working Directory:", os.getcwd())
-        print("Configured Model Path:", settings.MODEL_PATH)
-        print("Absolute Path:", os.path.abspath(settings.MODEL_PATH))
-        print("File Exists:", os.path.exists(settings.MODEL_PATH))
+        print("Resolved Model Path:", model_path)
+        print("Absolute Path:", os.path.abspath(model_path))
+        print("File Exists:", os.path.exists(model_path))
 
         try:
-            loaded_model = joblib.load(settings.MODEL_PATH)
+            loaded_model = joblib.load(model_path)
 
             print("Loaded Object Type:", type(loaded_model))
 
