@@ -12,4 +12,8 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  // Target a standalone Node server for Railway/self-hosted deployments.
+  nitro: {
+    preset: "node-server",
+  },
 });
