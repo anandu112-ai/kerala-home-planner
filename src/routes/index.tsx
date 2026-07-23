@@ -682,6 +682,12 @@ function Dashboard({ inputs, setInputs, apiResult, onEdit }: { inputs: Inputs; s
           sub={`Utilization ${budget.utilization}%`} tone={budget.status === "within" ? "good" : budget.status === "tight" ? "warn" : "bad"} />
       </div>
 
+      {/* AI Site Analysis */}
+      {apiResult?.site_analysis && (
+        <SiteAnalysisCard analysis={apiResult.site_analysis} />
+      )}
+
+
       {/* Budget analysis */}
       <div className="mt-8 rounded-3xl bg-card border border-border p-6 md:p-8">
         <div className="flex items-center gap-2 mb-5">
