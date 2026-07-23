@@ -11,3 +11,9 @@ joblib==1.5.1
 
 python-dotenv==1.1.1
 python-multipart==0.0.20
+
+# LLM integrations for site condition analysis
+# Both are optional — only the one matching your API key needs to be used.
+# The extractor auto-detects the provider from environment variables.
+openai==1.93.0
+google-generativeai==0.8.5

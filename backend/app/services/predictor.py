@@ -20,9 +20,9 @@ def predict_with_ai_adjustments(data: dict) -> dict:
         # If the base model fails, we cannot proceed, so we raise the exception
         raise e
 
-    # 2. Extract site description
-    site_description = data.get("site_description", "")
-    
+    # 2. Extract site description (field is Optional[str], so may be None)
+    site_description = data.get("site_description") or ""
+
     # 3. If site_description is empty or LLM fails, return base prediction with no adjustment
     if not site_description.strip():
         return {
