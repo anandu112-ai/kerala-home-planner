@@ -1,4 +1,19 @@
 services:
+  # ── Frontend (TanStack Start / Node.js SSR) ────────────────────────────
+  - type: web
+    name: kerala-home-planner-frontend
+    runtime: node
+    buildCommand: npm install --legacy-peer-deps && npm run build
+    startCommand: node .output/server/index.mjs
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22.23.1
+      - key: BACKEND_URL
+        sync: false   # set to your Render backend URL after it deploys
+
+  # ── Backend (FastAPI / Python) ─────────────────────────────────────────
   - type: web
     name: kerala-home-planner-backend
     runtime: python
@@ -13,6 +28,6 @@ services:
       - key: ENVIRONMENT
         value: production
       - key: FRONTEND_URL
-        sync: false
+        sync: false   # set to your Render frontend URL after it deploys
       - key: GEMINI_API_KEY
-        sync: false
+        sync: false   # set in Render dashboard
