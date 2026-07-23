@@ -24,7 +24,7 @@ import { serverPredict } from "@/services/serverPredict";
 import { toast, Toaster } from "sonner";
 
 async function getPrediction(inputs: Inputs): Promise<PredictionResponse> {
-  return serverPredict({
+  const result = await serverPredict({
     data: {
       district: inputs.district,
       built_up_area_sqft: inputs.builtUpArea,
@@ -43,6 +43,10 @@ async function getPrediction(inputs: Inputs): Promise<PredictionResponse> {
       site_description: inputs.siteDescription?.trim() || undefined,
     },
   });
+  if (!result.ok) {
+    throw new Error(result.error);
+  }
+  return result.data;
 }
 
 export const Route = createFileRoute("/")({
