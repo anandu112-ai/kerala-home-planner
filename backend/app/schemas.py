@@ -69,8 +69,26 @@ class SiteAdjustment(BaseModel):
     detected_conditions: List[DetectedCondition]
 
 
+class SimilarProperty(BaseModel):
+    district: str
+    location: str
+    built_up_area_sqft: float
+    bedrooms: int
+    quality: str
+    price: float
+    similarity: float
+
+class MarketAnalysis(BaseModel):
+    average_price: float
+    lowest_price: float
+    highest_price: float
+    price_difference: float
+    position: str
+
 class PredictionResponse(BaseModel):
     predicted_cost: float
+    predicted_price: float
+    prediction_id: str
     cost_range: Dict[str, float]
     model_accuracy: float
     cost_per_sqft: float
@@ -84,3 +102,10 @@ class PredictionResponse(BaseModel):
 
     # AI site condition analysis fields (present when site_description is provided)
     site_analysis: Optional[SiteAdjustment] = None
+    
+    # New Similar Property and Market Analysis fields
+    similar_properties: List[SimilarProperty] = []
+    market_analysis: Optional[MarketAnalysis] = None
+    ai_explanation: Optional[str] = None
+
+

@@ -1,153 +1,109 @@
-"""
-services/price_adjustment.py
-------------------------------
-Rule-based engine that adjusts the ML base construction cost prediction
-based on real-world SITE CONDITIONS that affect CONSTRUCTION COST.
-
-This is NOT a property resale value model.
-Difficult site conditions raise construction cost because:
-  - No/poor vehicle access  → head-loading and manual material handling
-  - Poor road               → heavy vehicles cannot reach; extra handling
-  - Hilly terrain           → excavation, retaining walls, scaffolding
-  - Flood risk              → elevated plinth, waterproofing, drainage
-  - Remote location         → transport cost + crew travel allowance
-
-Easy conditions can save cost:
-  - Good water availability → no bore-well or water-tanker needed
-
-The ML base_prediction is NEVER modified — adjustment is computed separately.
-"""
-
 import logging
-from typing import Any
 
-logger = logging.getLogger("kerala_house_backend.price_adjustment")
+logger = logging.getLogger("kerala_home_planner.services.price_adjustment")
 
-# ── Adjustment rules ────────────────────────────────────────────────────────
-# Each tuple: (feature_key, feature_value, pct_change, label, reason)
-# pct_change > 0  → construction cost INCREASES
-# pct_change < 0  → construction cost DECREASES (saving)
-_RULES: list[tuple[str, Any, float, str, str]] = [
+try:
+    from app.services.construction_cost_analyzer import calculate_construction_adjustments
+except ImportError:
+    from services.construction_cost_analyzer import calculate_construction_adjustments
 
-    # ── Access & roads ──────────────────────────────────────────────────────
-    (
-        "vehicle_access", "none", +10.0,
-        "No vehicle access",
-        (
-            "All materials must be head-loaded or hand-carried to the site. "
-            "Labour cost surges significantly for material handling alone."
-        ),
-    ),
-    (
-        "vehicle_access", "poor", +5.0,
-        "Poor vehicle access",
-        (
-            "Restricted vehicle entry means smaller loads per trip and extra "
-            "offloading labour, raising overall material-handling cost."
-        ),
-    ),
-    (
-        "road_quality", "poor", +4.0,
-        "Poor road quality",
-        (
-            "Heavy construction vehicles (concrete mixers, cranes, tippers) "
-            "cannot access freely; extra handling and detour costs apply."
-        ),
-    ),
+# Rules for Site Condition Adjustments
+# format: (feature_key, expected_value, percent_impact, condition_label, explanation)
+SITE_RULES = [
+    # Terrain Type
+    ("terrain", "hilly", +8.0, "Hilly terrain", "Sloped/hilly sites require deeper excavation, retaining walls, and extra structural support."),
+    ("terrain", "sloped", +4.0, "Sloped terrain", "Sloped terrain requires extra excavation and level filling."),
 
-    # ── Terrain ─────────────────────────────────────────────────────────────
-    (
-        "terrain_type", "hilly", +7.0,
-        "Hilly terrain",
-        (
-            "Sloped sites need deeper excavation, retaining walls, extra "
-            "scaffolding and slope-stabilisation — all add significant cost."
-        ),
-    ),
+    # Vehicle Access
+    ("vehicle_access", "none", +12.0, "No vehicle access", "No vehicle access requires manual head-loading of all construction materials."),
+    ("vehicle_access", "poor", +6.0, "Poor vehicle access", "Poor/restricted vehicle access increases material-handling labour costs."),
 
-    # ── Risk factors ────────────────────────────────────────────────────────
-    (
-        "flood_risk", "yes", +6.0,
-        "Flood risk area",
-        (
-            "Flood-prone sites require elevated plinth, anti-flood foundation "
-            "design, waterproofing layers and drainage channel construction."
-        ),
-    ),
+    # Road Quality
+    ("road_accessibility", "poor", +5.0, "Poor road quality", "Poor road quality limits heavy transit mixers and cranes, requiring manual workarounds."),
+    ("road_accessibility", "average", +2.0, "Average road quality", "Narrow or single-lane roads slightly increase transit and delivery times."),
 
-    # ── Location / remoteness ───────────────────────────────────────────────
-    (
-        "distance_from_city", "high", +3.0,
-        "Far from city",
-        (
-            "Remote sites increase material transportation cost and require "
-            "daily travel or accommodation allowance for the construction crew."
-        ),
-    ),
-    (
-        "distance_from_city", "medium", +1.5,
-        "Moderate distance from city",
-        (
-            "Moderate distance slightly raises transportation and "
-            "crew travel costs."
-        ),
-    ),
+    # Location Advantage / Distance
+    ("location_advantage", "negative", +4.0, "Remote location", "Remote location increases logistics, transport, and crew transit costs."),
+    ("location_advantage", "positive", -3.0, "Location advantage", "Favourable location near highway/town reduces transport and mobilization costs."),
 
-    # ── Cost savings ────────────────────────────────────────────────────────
-    (
-        "water_availability", "good", -2.0,
-        "Good water availability",
-        (
-            "Reliable on-site water eliminates bore-well drilling and "
-            "water-tanker hire during construction and curing stages."
-        ),
-    ),
+    # Scenic View
+    ("scenic_view", True, +3.0, "Scenic view", "Scenic view or valley placements often require specialized structural framing and layouts."),
+
+    # Flood Risk
+    ("flood_risk", "high", +7.0, "High flood risk", "High flood risk requires elevated plinth beams and waterproofing/drainage infrastructure.")
 ]
 
-
-def calculate_adjustments(base_price: float, features: dict) -> dict:
+def calculate_adjustments(base_price: float, features_data: dict) -> dict:
     """
-    Apply site-condition rules to base_price.
+    Applies construction and site adjustments to the ML model's base prediction.
 
-    Returns
-    -------
-    dict with keys:
-        base_prediction            – original ML output, unchanged
-        site_adjustment_amount     – total rupee delta (positive = more expensive)
-        site_adjustment_percentage – cumulative % change
-        final_prediction           – base + adjustment (floored at 0)
-        detected_conditions        – list of triggered rule dicts
+    Parameters:
+    - base_price: base ML prediction (float)
+    - features_data: output from llm_feature_extractor containing:
+        - corrected_text: normalized description string
+        - detected_features: dictionary of extracted features
+        - construction_features: dictionary of construction features
+        - site_features: dictionary of site features
+
+    Returns:
+    - dict matching both current API and LLM output format specifications.
     """
-    total_pct = 0.0
-    detected: list[dict] = []
+    corrected_text = features_data.get("corrected_text", "")
+    detected_features = features_data.get("detected_features", {})
+    construction_features = features_data.get("construction_features", {})
+    site_features = features_data.get("site_features", {})
 
-    for feat_key, feat_val, pct, label, reason in _RULES:
-        actual = features.get(feat_key)
+    all_adjustments = []
+
+    # 1. Calculate construction adjustments
+    const_adj_amount, const_adjustments = calculate_construction_adjustments(base_price, construction_features)
+    all_adjustments.extend(const_adjustments)
+
+    # 2. Calculate site adjustments
+    site_adj_pct = 0.0
+    for feat_key, feat_val, pct, label, reason in SITE_RULES:
+        actual = site_features.get(feat_key)
         if actual is None:
             continue
 
-        match = (actual is feat_val) if isinstance(feat_val, bool) else (actual == feat_val)
-        if not match:
-            continue
+        # Comparison
+        if isinstance(feat_val, bool):
+            match = bool(actual) is feat_val
+        else:
+            match = str(actual).lower().strip() == feat_val
 
-        impact = round(base_price * pct / 100.0, 2)
-        total_pct += pct
-        detected.append(
-            {
+        if match:
+            impact_amount = round(base_price * pct / 100.0, 2)
+            site_adj_pct += pct
+            all_adjustments.append({
                 "condition": label,
-                "impact": impact,
-                "reason": reason,
-            }
-        )
-        logger.debug("Rule triggered: %s  (%+.1f%%,  ₹%.0f)", label, pct, impact)
+                "feature": label,
+                "impact": impact_amount,
+                "amount": impact_amount,
+                "reason": reason
+            })
+            logger.info("Site condition triggered: %s (%+.1f%%, ₹%.0f)", label, pct, impact_amount)
 
-    adjustment_amount = round(base_price * total_pct / 100.0, 2)
-    final_price = max(0.0, round(base_price + adjustment_amount, 2))
+    site_adj_amount = round(base_price * site_adj_pct / 100.0, 2)
 
+    # 3. Sum final prices
+    # final_price = base_prediction + construction_adjustment + site_adjustment
+    total_adjustment_amount = round(const_adj_amount + site_adj_amount, 2)
+    final_price = max(0.0, round(base_price + total_adjustment_amount, 2))
+    total_percentage = round((total_adjustment_amount / base_price) * 100.0, 2) if base_price > 0 else 0.0
+
+    logger.info("Base Price: ₹%.2f, Construction Adj: ₹%.2f, Site Adj: ₹%.2f, Final: ₹%.2f",
+                base_price, const_adj_amount, site_adj_amount, final_price)
+
+    # Return structure compatible with the frontend expectations AND new requirements:
     return {
-        "base_prediction":            round(base_price, 2),
-        "site_adjustment_amount":     adjustment_amount,
-        "site_adjustment_percentage": round(total_pct, 2),
-        "final_prediction":           final_price,
-        "detected_conditions":        detected,
+        "base_prediction": round(base_price, 2),
+        "site_adjustment_amount": total_adjustment_amount,
+        "site_adjustment_percentage": total_percentage,
+        "final_prediction": final_price,
+        "detected_conditions": all_adjustments,
+        # Extended fields for the new LLM output format
+        "corrected_text": corrected_text,
+        "detected_features": detected_features,
+        "adjustments": all_adjustments
     }

@@ -34,8 +34,28 @@ export interface SiteAnalysis {
   detected_conditions: DetectedCondition[];
 }
 
+export interface SimilarProperty {
+  district: string;
+  location: string;
+  built_up_area_sqft: number;
+  bedrooms: number;
+  quality: string;
+  price: number;
+  similarity: number;
+}
+
+export interface MarketAnalysis {
+  average_price: number;
+  lowest_price: number;
+  highest_price: number;
+  price_difference: number;
+  position: string;
+}
+
 export interface PredictionResponse {
   predicted_cost: number;
+  predicted_price: number;
+  prediction_id: string;
   cost_range: { min: number; max: number };
   model_accuracy: number;
   cost_per_sqft: number;
@@ -54,7 +74,13 @@ export interface PredictionResponse {
   addons: { selected: { name: string; cost: number }[]; total_cost: number };
   // Present when site_description was provided and LLM succeeded
   site_analysis?: SiteAnalysis | null;
+  // Similar properties & market statistics
+  similar_properties?: SimilarProperty[];
+  market_analysis?: MarketAnalysis | null;
+  ai_explanation?: string;
 }
+
+
 
 const API_URL =
   (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ||

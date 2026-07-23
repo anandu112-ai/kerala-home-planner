@@ -1,7 +1,9 @@
 import logging
+import uuid
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger("kerala_home_planner")
 
@@ -10,6 +12,7 @@ from app.schemas import PredictionRequest
 from app.predictor import predictor
 
 from app.services.predictor import predict_with_ai_adjustments
+from app.services.property_comparator import find_similar_properties
 
 from app.planner import (
     calculate_cost_range,
@@ -82,8 +85,10 @@ def health():
     }
 
 # -----------------------------
-# Prediction Endpoint
+# Prediction Cache & Endpoint
 # -----------------------------
+
+PREDICTION_CACHE = {}
 
 @app.post("/predict")
 def predict(request: PredictionRequest):
@@ -94,9 +99,10 @@ def predict(request: PredictionRequest):
       1. Run existing ML model → base_prediction
       2. If site_description is provided, call LLM to extract site conditions
          and compute price adjustment.
-      3. Return full response including site_analysis when available.
-         If the LLM step fails, the endpoint still returns the base ML prediction
-         without crashing.
+      3. Find similar properties from dataset using similarity search.
+      4. Calculate market average, min, max, and position stats.
+      5. Generate an AI explanation report.
+      6. Cache the prediction inputs and computed outputs for PDF report retrieval.
     """
 
     try:
@@ -107,10 +113,34 @@ def predict(request: PredictionRequest):
 
         # The base ML cost is the base_prediction from the AI pipeline
         predicted_cost = ai_result["base_prediction"]
+        final_prediction = ai_result.get("final_prediction", predicted_cost)
+        detected_conditions = ai_result.get("detected_conditions", [])
 
-        # Build the core planner response (unchanged from original logic)
+        # ---- Similar properties search ----
+        comp_result = find_similar_properties(data, final_prediction, adjustments=detected_conditions)
+
+        # ---- Cache prediction context for PDF report generation ----
+        prediction_id = str(uuid.uuid4())
+        PREDICTION_CACHE[prediction_id] = {
+            "property_details": data,
+            "prediction_result": {
+                "predicted_price": final_prediction,
+                "base_prediction": predicted_cost,
+                "site_adjustment_amount": ai_result.get("site_adjustment_amount", 0.0),
+                "site_adjustment_percentage": ai_result.get("site_adjustment_percentage", 0.0),
+                "final_prediction": final_prediction
+            },
+            "adjustments": detected_conditions,
+            "similar_properties": comp_result["similar_properties"],
+            "market_analysis": comp_result["market_analysis"],
+            "ai_explanation": comp_result["ai_explanation"]
+        }
+
+        # Build the core planner response
         response = {
             "predicted_cost": predicted_cost,
+            "predicted_price": final_prediction,
+            "prediction_id": prediction_id,
 
             "cost_range": calculate_cost_range(predicted_cost),
 
@@ -144,6 +174,11 @@ def predict(request: PredictionRequest):
             "recommendations": recommendations(data, predicted_cost),
 
             "addons": addon_summary(data["addons"]),
+            
+            # Similar Properties & Market Analysis
+            "similar_properties": comp_result["similar_properties"],
+            "market_analysis": comp_result["market_analysis"],
+            "ai_explanation": comp_result["ai_explanation"]
         }
 
         # ---- Attach site analysis only when site_description was provided ----
@@ -155,6 +190,9 @@ def predict(request: PredictionRequest):
                 "site_adjustment_percentage": ai_result["site_adjustment_percentage"],
                 "final_prediction": ai_result["final_prediction"],
                 "detected_conditions": ai_result["detected_conditions"],
+                "corrected_text": ai_result.get("corrected_text", ""),
+                "detected_features": ai_result.get("detected_features", {}),
+                "adjustments": ai_result.get("adjustments", []),
             }
 
         response["site_analysis"] = site_analysis
@@ -162,10 +200,49 @@ def predict(request: PredictionRequest):
         return response
 
     except Exception:
-
         logger.exception("Prediction failed")
-
         raise HTTPException(
             status_code=500,
             detail="Failed to compute prediction"
+        )
+
+
+@app.get("/api/v1/report/{prediction_id}")
+def download_report(prediction_id: str):
+    """
+    Generates a professional 5-page AI Valuation Report PDF.
+    Returns the file as a StreamingResponse.
+    """
+    if prediction_id not in PREDICTION_CACHE:
+        raise HTTPException(
+            status_code=404,
+            detail="Report not found or expired. Please run prediction again."
+        )
+
+    cache_data = PREDICTION_CACHE[prediction_id]
+
+    try:
+        from app.services.pdf_report_generator import generate_pdf_report
+        pdf_bytes = generate_pdf_report(
+            property_details=cache_data["property_details"],
+            prediction_result=cache_data["prediction_result"],
+            adjustments=cache_data["adjustments"],
+            similar_properties=cache_data["similar_properties"],
+            market_analysis=cache_data["market_analysis"],
+            ai_explanation=cache_data["ai_explanation"]
+        )
+
+        from io import BytesIO
+        return StreamingResponse(
+            BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename=kerala_ai_valuation_report_{prediction_id}.pdf"
+            }
+        )
+    except Exception as e:
+        logger.exception("Report generation failed")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating PDF: {str(e)}"
         )

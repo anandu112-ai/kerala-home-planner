@@ -206,4 +206,8 @@ def predict(request: PredictionRequest):
         "detected_conditions":        detected,
         "model_accuracy":             96.0,
         "site_analysis_available":    site_analysis_available,
+        # New fields from the updated AI pipeline
+        "corrected_text":             result.get("corrected_text", "") if site_analysis_available else "",
+        "detected_features":          result.get("detected_features", {}) if site_analysis_available else {},
+        "adjustments":                result.get("adjustments", []) if site_analysis_available else [],
     }

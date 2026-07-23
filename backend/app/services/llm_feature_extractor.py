@@ -7,266 +7,279 @@ import urllib.error
 
 logger = logging.getLogger("kerala_home_planner.services.llm_feature_extractor")
 
-# ---------------------------------------------------------------------------
-# LLM Prompt
-# ---------------------------------------------------------------------------
+try:
+    from app.services.text_normalizer import normalize_text, get_llm_config
+except ImportError:
+    from services.text_normalizer import normalize_text, get_llm_config
 
-SYSTEM_PROMPT = """You are a construction site condition extractor for Kerala house construction projects.
-Analyze the site description and extract features that affect CONSTRUCTION COST.
+# ---------------------------------------------------------------------------
+# LLM Prompt for Feature Extraction
+# ---------------------------------------------------------------------------
+SYSTEM_PROMPT = """You are an AI feature extractor for construction site descriptions and building material quality in Kerala.
+Analyze the provided clean site description and extract the Construction and Site features.
+
 Return ONLY a valid JSON object. Do not include markdown, code fences, or any explanation.
+All values should be normalized strings or booleans, or null if not mentioned.
 
-Feature extraction guidelines:
-- vehicle_access: How easily can construction vehicles (trucks, mixers, cranes) reach the site?
-  "good"  = vehicles can reach directly
-  "poor"  = vehicles can reach with difficulty (narrow road, partial access)
-  "none"  = no vehicle access at all, everything must be carried manually
-
-- terrain_type: What is the ground/slope condition?
-  "flat"  = level ground, easy to build
-  "hilly" = sloped, hilly, mountainous, valley area, uneven terrain
-
-- road_quality: What is the condition of the road to the site?
-  "good"    = paved, wide road
-  "average" = narrow or partially paved
-  "poor"    = dirt track, damaged road, kutcha road
-
-- scenic_view: Does the site have a scenic/valley/mountain/river view?
-  true  = yes (valley view, river view, mountain view, beautiful scenery)
-  false = no
-
-- distance_from_city: How far is the site from the nearest town or city?
-  "low"    = within town / city limits, close to main road
-  "medium" = 5-20 km from town
-  "high"   = remote, far from city, isolated, deep village
-
-- water_availability: Is water available at or near the site during construction?
-  "good" = well, river, municipal supply nearby
-  "poor" = no water source, needs tanker
-
-- flood_risk: Is the site in a flood-prone, low-lying, or waterlogged area?
-  "yes" = flood-prone, waterlogged, near river that floods, low-lying
-  "no"  = not flood-prone
-
-- location_advantage: Overall location quality (omit if unclear)
-  "positive" / "neutral" / "negative"
-
-Omit any key that is NOT mentioned or cannot be inferred. Return null for uncertain values.
-
-Site description:
-"{site_description}"
-
-Example - "House is in hilly area with beautiful valley view. No vehicle access and road is 1 km away. Far from city.":
+JSON Schema:
 {{
-  "vehicle_access": "none",
-  "terrain_type": "hilly",
-  "road_quality": "poor",
-  "scenic_view": true,
-  "distance_from_city": "high"
-}}"""
+  "construction_features": {{
+    "material_quality": "basic" | "standard" | "premium" | "luxury" | null,
+    "flooring_quality": "basic" | "standard" | "premium" | "luxury" | null,
+    "wood_work_quality": "none" | "minimal" | "standard" | "premium" | null,
+    "kitchen_specification": "basic" | "modular" | "premium_modular" | null,
+    "bathroom_quality": "basic" | "standard" | "premium" | null,
+    "electrical_work": "standard" | "premium" | null,
+    "construction_grade": "standard" | "premium" | "luxury" | null,
+    "premium_features": ["solar", "pool", "automation", "landscaping"] (array of strings, empty if none)
+  }},
+  "site_features": {{
+    "terrain": "flat" | "hilly" | "sloped" | null,
+    "road_accessibility": "good" | "average" | "poor" | null,
+    "vehicle_access": "good" | "poor" | "none" | null,
+    "location_advantage": "positive" | "neutral" | "negative" | null,
+    "scenic_view": true | false | null,
+    "flood_risk": "high" | "low" | "none" | null
+  }}
+}}
 
+Guidelines for semantic understanding:
+- "far from main road", "remote location", "no proper transportation" -> vehicle_access: "poor", road_accessibility: "poor".
+- "near flood area", "low lying", "waterlogged" -> flood_risk: "high".
+- "hilly area", "sloped ground", "mountains" -> terrain: "hilly".
+- "granite flooring", "marble flooring" -> flooring_quality: "luxury" (marble/granite is luxury).
+- "premium tiles" -> flooring_quality: "premium".
+- "luxury kitchen", "premium modular" -> kitchen_specification: "premium_modular".
+- "modular kitchen" -> kitchen_specification: "modular".
+- "high quality wood work", "teak wood" -> wood_work_quality: "premium".
+- "premium fittings", "automated" -> electrical_work: "premium".
+- "premium construction", "luxury grade" -> construction_grade: "luxury" or "premium".
+
+Input text:
+"{site_description}"
+"""
 
 # ---------------------------------------------------------------------------
-# Keyword fallback — works with NO API key
+# Rich Keyword Fallback — Offline / API Error Fallback
 # ---------------------------------------------------------------------------
-# Each entry: (feature_key, feature_value, list_of_keyword_patterns)
-# Patterns are matched case-insensitively against the full description text.
-# Earlier entries take priority within the same feature_key.
-
-_KEYWORD_RULES = [
-    # ── vehicle_access ──────────────────────────────────────────────────────
-    ("vehicle_access", "none", [
-        r"no vehicle.{0,10}(access|road|entry|reach)",
-        r"vehicle.{0,10}(cannot|can'?t|no).{0,10}(reach|access|enter)",
-        r"(cannot|can'?t|no).{0,10}vehicle",
-        r"no.{0,6}(road|access).{0,20}(vehicle|truck|lorry|car)",
-        r"(foot|head.?load|manual|carry|walking).{0,20}(only|access|material)",
-        r"no.{0,6}access\b",
-        r"inaccessible",
-        r"road.{0,10}(1|one|2|two|half).{0,6}(km|kilo)",
-        r"(far|away).{0,10}(road|highway|main road)",
-    ]),
-    ("vehicle_access", "poor", [
-        r"(poor|bad|difficult|narrow|restricted).{0,20}(vehicle|access|road)",
-        r"(vehicle|truck|lorry).{0,20}(difficult|hard|problem|issue)",
-        r"narrow.{0,10}(road|lane|path)",
-        r"(semi|partial).{0,10}access",
-    ]),
-
-    # ── terrain_type ────────────────────────────────────────────────────────
-    ("terrain_type", "hilly", [
-        r"\b(hill|hilly|hills|slope|sloped|sloping|mountain|mountainous)\b",
-        r"\b(valley|mala|ghat|uneven|rocky|elevation|steep|gradient)\b",
-        r"(on a|on the).{0,10}(hill|slope|mountain)",
-    ]),
-
-    # ── road_quality ────────────────────────────────────────────────────────
-    ("road_quality", "poor", [
-        r"(poor|bad|broken|damaged|no|kutcha|dirt|mud|unpaved|gravel).{0,10}road",
-        r"road.{0,10}(poor|bad|broken|damaged|no|kutcha|dirt|mud|unpaved)",
-        r"(no|without).{0,6}(tar|tarred|paved|concrete|black.?top).{0,10}road",
-        r"road.{0,6}(not|isn.?t).{0,10}(tar|tarred|paved|good)",
-        r"\b(track|footpath|path only)\b",
-    ]),
-    ("road_quality", "average", [
-        r"(narrow|single.?lane|small).{0,10}road",
-        r"road.{0,10}(narrow|small|single.?lane)",
-        r"(average|ok|okay|decent).{0,10}road",
-    ]),
-
-    # ── scenic_view ─────────────────────────────────────────────────────────
-    ("scenic_view", True, [
-        r"(beautiful|scenic|amazing|gorgeous|nice|lovely|great|stunning).{0,20}(view|scenery|scene|landscape)",
-        r"(valley|river|mountain|hill|ocean|sea|lake|backwater).{0,10}view",
-        r"view.{0,10}(valley|river|mountain|hill|ocean|sea|lake)",
-        r"\b(scenic|panoramic|picturesque)\b",
-    ]),
-
-    # ── distance_from_city ──────────────────────────────────────────────────
-    ("distance_from_city", "high", [
-        r"(far|away|remote|isolated|outskirt|deep|interior).{0,20}(city|town|main road|highway|urban)",
-        r"(city|town|main road).{0,20}(far|away|remote|isolated)",
-        r"\b(remote|isolated|interior|deep village|rural)\b",
-        r"(far from|away from).{0,10}(city|town|main)",
-        r"\d+\s*(km|kilo).{0,10}(from|away).{0,10}(city|town|road|highway)",
-    ]),
-    ("distance_from_city", "medium", [
-        r"(moderate|some|bit|little).{0,20}(distance|far|away).{0,20}(city|town)",
-        r"(5|6|7|8|9|10|11|12|13|14|15).{0,6}(km|kilo).{0,10}(from|away|to).{0,10}(city|town|road)",
-    ]),
-
-    # ── water_availability ──────────────────────────────────────────────────
-    ("water_availability", "good", [
-        r"(good|enough|plenty|abundant|available|near).{0,20}water",
-        r"water.{0,20}(good|available|plenty|enough|near)",
-        r"(well|borewell|bore.well|river|stream|canal|municipal).{0,10}(water|supply|nearby|available)",
-        r"water.{0,10}(supply|source).{0,10}(nearby|available|good)",
-    ]),
-    ("water_availability", "poor", [
-        r"(no|lack|scarce|poor|shortage|problem).{0,20}water",
-        r"water.{0,20}(no|lack|scarce|poor|shortage|problem|issue)",
-        r"(need|require).{0,10}(water.tanker|tanker|lorry).{0,10}water",
-        r"water.{0,10}(tanker|lorry)",
-    ]),
-
-    # ── flood_risk ──────────────────────────────────────────────────────────
-    ("flood_risk", "yes", [
-        r"\b(flood|flooded|flooding|flood.prone|flood.risk)\b",
-        r"(water.?log|waterlog|water.?logging)",
-        r"(low.?lying|low lying|low level).{0,20}(area|land|plot)",
-        r"(near|beside|adjacent|next).{0,10}(river|stream|nadi|canal).{0,30}(flood|water|rain)",
-        r"(rain|monsoon).{0,20}(flood|water.?log|inundat)",
-    ]),
-]
-
-
 def _keyword_extract(text: str) -> dict:
     """
-    Pure keyword/regex-based feature extractor.
-    Fast, zero API cost, handles typos reasonably well via loose patterns.
-    Used when no LLM API key is configured OR as a fallback when LLM fails.
+    Advanced regex-based fallback extractor when LLM API keys are missing or calls fail.
+    Ensures correct structure mapping and handles typos.
     """
     t = text.lower()
-    features: dict = {}
+    
+    # Initialize defaults
+    c_features = {
+        "material_quality": None,
+        "flooring_quality": None,
+        "wood_work_quality": None,
+        "kitchen_specification": None,
+        "bathroom_quality": None,
+        "electrical_work": None,
+        "construction_grade": None,
+        "premium_features": []
+    }
+    
+    s_features = {
+        "terrain": None,
+        "road_accessibility": None,
+        "vehicle_access": None,
+        "location_advantage": None,
+        "scenic_view": False,
+        "flood_risk": None
+    }
 
-    for feat_key, feat_val, patterns in _KEYWORD_RULES:
-        # Skip if we already set a value for this feature (first match wins)
-        if feat_key in features:
-            continue
-        for pattern in patterns:
-            if re.search(pattern, t):
-                features[feat_key] = feat_val
-                logger.debug("Keyword match: %s = %s  (pattern: %s)", feat_key, feat_val, pattern)
-                break
+    # ── Site Terrain ──
+    if re.search(r"\b(hill|hilly|mountain|slope|sloped|sloping|elevation|steep|gradient|uneven|valley)\b", t):
+        s_features["terrain"] = "hilly"
+    elif re.search(r"\b(flat|level|plain)\b", t):
+        s_features["terrain"] = "flat"
 
-    return features
+    # ── Vehicle Access & Road Quality ──
+    if re.search(r"(no.{0,10}(vehicle|car|truck|lorry|access|road))|(\bhead.?load\b)|(\bmanual carry\b)|\binaccessible\b", t):
+        s_features["vehicle_access"] = "none"
+        s_features["road_accessibility"] = "poor"
+    elif re.search(r"(poor|bad|difficult|narrow|restricted|far from).{0,15}(vehicle|access|road|highway|transport)", t) or re.search(r"\b(narrow|single.?lane).{0,10}(road|lane)\b", t):
+        s_features["vehicle_access"] = "poor"
+        s_features["road_accessibility"] = "poor"
+    elif re.search(r"\b(good|easy|direct|wide).{0,10}(access|road|highway)\b", t):
+        s_features["vehicle_access"] = "good"
+        s_features["road_accessibility"] = "good"
 
+    # ── Location Advantage / Distance ──
+    if re.search(r"\b(remote|isolated|deep village|interior|far from town|far from city)\b", t):
+        s_features["location_advantage"] = "negative"
+    elif re.search(r"\b(highway proximity|near city|near town|close to city|close to town|prime location)\b", t):
+        s_features["location_advantage"] = "positive"
+
+    # ── Scenic View ──
+    if re.search(r"\b(view|scenic|scenery|panoramic|valley view|river view|mountain view|good view|beautiful view)\b", t):
+        s_features["scenic_view"] = True
+
+    # ── Flood Risk ──
+    if re.search(r"\b(flood|flooded|flooding|waterlog|waterlogg|low.?lying|low lying|river side|near river)\b", t):
+        s_features["flood_risk"] = "high"
+
+    # ── Material Quality & Construction Grade ──
+    if re.search(r"\b(luxury|ultra-premium|elite)\b", t):
+        c_features["material_quality"] = "luxury"
+        c_features["construction_grade"] = "luxury"
+    elif re.search(r"\b(premium|high quality|superior)\b", t):
+        c_features["material_quality"] = "premium"
+        c_features["construction_grade"] = "premium"
+    elif re.search(r"\b(basic|cheap|economy|budget)\b", t):
+        c_features["material_quality"] = "basic"
+
+    # ── Flooring Quality ──
+    if re.search(r"\b(marble|granite)\b", t):
+        c_features["flooring_quality"] = "luxury"
+    elif re.search(r"\b(premium tile|vitrified|tiles|tiling)\b", t):
+        c_features["flooring_quality"] = "premium"
+    elif re.search(r"\b(ceramic|cement flooring|basic flooring)\b", t):
+        c_features["flooring_quality"] = "basic"
+
+    # ── Woodwork ──
+    if re.search(r"\b(teak|mahogany|high quality wood|premium wood|wood work)\b", t):
+        c_features["wood_work_quality"] = "premium"
+    elif re.search(r"\b(standard woodwork|semi-furnished)\b", t):
+        c_features["wood_work_quality"] = "standard"
+
+    # ── Kitchen Specification ──
+    if re.search(r"\b(luxury kitchn|luxury kitchen|premium modular kitchen|high-end modular kitchen)\b", t):
+        c_features["kitchen_specification"] = "premium_modular"
+    elif re.search(r"\b(modular kitchen|kitchn|kitchen)\b", t):
+        c_features["kitchen_specification"] = "modular"
+
+    # ── Bathroom Quality ──
+    if re.search(r"\b(luxury bath|premium sanitary|concealed plumbing)\b", t):
+        c_features["bathroom_quality"] = "premium"
+    elif re.search(r"\b(basic bath|simple plumbing)\b", t):
+        c_features["bathroom_quality"] = "basic"
+
+    # ── Electrical Work ──
+    if re.search(r"\b(automation|smart switches|3-phase|three phase)\b", t):
+        c_features["electrical_work"] = "premium"
+
+    # ── Premium features / Addons list ──
+    p_addons = []
+    if "solar" in t:
+        p_addons.append("solar")
+    if "pool" in t or "swimming" in t:
+        p_addons.append("pool")
+    if "automation" in t or "smart home" in t:
+        p_addons.append("automation")
+    if "landscaping" in t or "garden" in t:
+        p_addons.append("landscaping")
+    c_features["premium_features"] = p_addons
+
+    return {
+        "construction_features": c_features,
+        "site_features": s_features
+    }
 
 # ---------------------------------------------------------------------------
-# LLM config resolution
+# Public Feature Extraction Endpoint
 # ---------------------------------------------------------------------------
-
-def get_llm_config():
-    api_key = os.getenv("LLM_API_KEY")
-    provider = os.getenv("LLM_PROVIDER")
-
-    openai_key = os.getenv("OPENAI_API_KEY")
-    gemini_key = os.getenv("GEMINI_API_KEY")
-
-    if not provider:
-        if api_key:
-            provider = "openai" if api_key.startswith("sk-") else "gemini"
-        elif openai_key:
-            provider = "openai"
-            api_key = openai_key
-        elif gemini_key:
-            provider = "gemini"
-            api_key = gemini_key
-    else:
-        provider = provider.lower()
-        if not api_key:
-            if provider == "openai":
-                api_key = openai_key
-            elif provider == "gemini":
-                api_key = gemini_key
-
-    return api_key, provider
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
 def extract_features(site_description: str) -> dict:
     """
-    Extract site condition features from free-text description.
-
-    Strategy:
-      1. Try LLM (Gemini or OpenAI) if an API key is configured.
-         LLM handles natural language, spelling mistakes, and context best.
-      2. If no API key OR the LLM call fails, fall back to the built-in
-         keyword/regex detector — works offline, zero cost, handles
-         common phrases and mild typos via loose regex patterns.
-
-    Returns a dict of features, or {} if nothing is detected.
+    Extract construction and site features from site description text.
+    1. Call Text Normalizer to resolve typos and normalize text.
+    2. Try LLM (Gemini or OpenAI) with corrected text.
+    3. Fall back to Regex-based extraction if LLM fails or keys are missing.
     """
     if not site_description or not site_description.strip():
-        return {}
+        return {
+            "corrected_text": "",
+            "detected_features": {},
+            "construction_features": {},
+            "site_features": {}
+        }
+
+    # Step 1: Normalize text (handles spell check and formatting)
+    corrected_text = normalize_text(site_description)
+    if not corrected_text:
+        corrected_text = site_description
 
     api_key, provider = get_llm_config()
 
-    # ── Try LLM first ───────────────────────────────────────────────────────
+    # Step 2: Try LLM extraction
     if api_key:
-        prompt = SYSTEM_PROMPT.format(site_description=site_description)
+        prompt = SYSTEM_PROMPT.format(site_description=corrected_text)
         try:
+            model = os.getenv("LLM_MODEL")
             if provider == "openai":
-                result = _call_openai(prompt, api_key)
+                if not model:
+                    model = "gpt-4o-mini"
+                result = _call_openai(prompt, api_key, model)
             else:
-                result = _call_gemini(prompt, api_key)
+                if not model:
+                    model = "gemini-2.5-flash"
+                result = _call_gemini(prompt, api_key, model)
 
-            if result:
-                logger.info("LLM extracted %d features via %s", len(result), provider)
-                return result
+            if result and ("construction_features" in result or "site_features" in result):
+                logger.info("LLM successfully extracted features using provider: %s", provider)
+                
+                # Format to flat detected_features for user format
+                detected_features = {}
+                # Merge construction features
+                c_feats = result.get("construction_features") or {}
+                for k, v in c_feats.items():
+                    if v is not None:
+                        # map keys logically
+                        key_map = {
+                            "material_quality": "construction_quality",
+                            "flooring_quality": "flooring"
+                        }
+                        mapped_key = key_map.get(k, k)
+                        detected_features[mapped_key] = v
+
+                # Merge site features
+                s_feats = result.get("site_features") or {}
+                for k, v in s_feats.items():
+                    if v is not None:
+                        detected_features[k] = v
+
+                return {
+                    "corrected_text": corrected_text,
+                    "detected_features": detected_features,
+                    "construction_features": c_feats,
+                    "site_features": s_feats
+                }
             else:
-                logger.warning("LLM returned empty result — falling back to keyword detector")
+                logger.warning("LLM returned empty or malformed feature response — falling back to keyword extractor")
         except Exception as e:
-            logger.error("LLM call failed (%s): %s — falling back to keyword detector", provider, e)
+            logger.error("LLM extraction failed (%s): %s — falling back to keyword extractor", provider, e)
     else:
-        logger.info("No LLM API key configured — using built-in keyword detector")
+        logger.info("No LLM key configured for feature extraction — using keyword extractor fallback")
 
-    # ── Keyword fallback ────────────────────────────────────────────────────
-    result = _keyword_extract(site_description)
-    logger.info("Keyword detector extracted %d features", len(result))
-    return result
+    # Step 3: Fall back to Regex keyword extraction
+    raw_feats = _keyword_extract(corrected_text)
+    
+    # Flatten detected_features for the user format
+    detected_features = {}
+    for k, v in raw_feats["construction_features"].items():
+        if v is not None:
+            key_map = {"material_quality": "construction_quality", "flooring_quality": "flooring"}
+            detected_features[key_map.get(k, k)] = v
+    for k, v in raw_feats["site_features"].items():
+        if v is not None:
+            detected_features[k] = v
 
+    return {
+        "corrected_text": corrected_text,
+        "detected_features": detected_features,
+        "construction_features": raw_feats["construction_features"],
+        "site_features": raw_feats["site_features"]
+    }
 
 # ---------------------------------------------------------------------------
-# LLM provider implementations
+# LLM Providers for Feature Extraction
 # ---------------------------------------------------------------------------
-
-def _call_openai(prompt: str, api_key: str) -> dict:
+def _call_openai(prompt: str, api_key: str, model: str) -> dict:
     url = "https://api.openai.com/v1/chat/completions"
     data = {
-        "model": "gpt-4o-mini",
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "response_format": {"type": "json_object"},
         "temperature": 0.1,
@@ -279,11 +292,11 @@ def _call_openai(prompt: str, api_key: str) -> dict:
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
         body = json.loads(resp.read())
-    return _clean_and_parse_json(body["choices"][0]["message"]["content"])
+    raw_content = body["choices"][0]["message"]["content"]
+    return _clean_and_parse_json(raw_content)
 
-
-def _call_gemini(prompt: str, api_key: str) -> dict:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+def _call_gemini(prompt: str, api_key: str, model: str) -> dict:
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
     data = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"responseMimeType": "application/json", "temperature": 0.1},
@@ -296,8 +309,8 @@ def _call_gemini(prompt: str, api_key: str) -> dict:
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
         body = json.loads(resp.read())
-    return _clean_and_parse_json(body["candidates"][0]["content"]["parts"][0]["text"])
-
+    raw_content = body["candidates"][0]["content"]["parts"][0]["text"]
+    return _clean_and_parse_json(raw_content)
 
 def _clean_and_parse_json(text: str) -> dict:
     text = text.strip()
@@ -306,17 +319,7 @@ def _clean_and_parse_json(text: str) -> dict:
         lines = [l for l in lines if not l.strip().startswith("```")]
         text = "\n".join(lines).strip()
     try:
-        parsed = json.loads(text)
-        normalized = {}
-        for key in [
-            "vehicle_access", "terrain_type", "road_quality",
-            "scenic_view", "distance_from_city", "water_availability",
-            "flood_risk", "location_advantage",
-        ]:
-            if key in parsed and parsed[key] is not None:
-                val = parsed[key]
-                normalized[key] = bool(val) if key == "scenic_view" else str(val).lower().strip()
-        return normalized
+        return json.loads(text)
     except Exception as e:
-        logger.error("Failed to parse LLM JSON: %s | raw: %.200s", e, text)
+        logger.error("Failed to parse LLM JSON response: %s | text: %s", e, text)
         return {}

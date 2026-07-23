@@ -20,7 +20,7 @@ import {
 } from "@/lib/estimator";
 import jsPDF from "jspdf";
 import { type PredictionResponse } from "@/services/predictionApi";
-import { serverPredict } from "@/services/serverPredict";
+import { serverPredict, serverDownloadReport } from "@/services/serverPredict";
 import { toast, Toaster } from "sonner";
 
 async function getPrediction(inputs: Inputs): Promise<PredictionResponse> {
@@ -607,6 +607,34 @@ function Dashboard({ inputs, setInputs, apiResult, onEdit }: { inputs: Inputs; s
   // Client-side estimate (always available, used as fallback and for scenarios/recs)
   const est = useMemo(() => computeEstimate(inputs), [inputs]);
 
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleDownloadReport = async (predictionId: string) => {
+    try {
+      setIsDownloading(true);
+      toast.loading("Generating valuation report PDF...", { id: "download-pdf" });
+      const res = await serverDownloadReport({ data: predictionId });
+      if (!res.ok) {
+        toast.error(`Failed to generate report: ${res.error}`, { id: "download-pdf" });
+        return;
+      }
+      
+      // Trigger download
+      const link = document.createElement("a");
+      link.href = `data:application/pdf;base64,${res.pdfBase64}`;
+      link.download = `kerala_ai_valuation_report_${predictionId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success("AI Valuation Report downloaded successfully!", { id: "download-pdf" });
+    } catch (err) {
+      toast.error("An error occurred while downloading the report.", { id: "download-pdf" });
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+
   // Prefer ML-predicted cost from API when available
   const mlTotal = apiResult?.predicted_cost ?? est.total;
   const mlAddonsCost = apiResult?.addons.total_cost ?? est.addons;
@@ -723,6 +751,16 @@ function Dashboard({ inputs, setInputs, apiResult, onEdit }: { inputs: Inputs; s
       {apiResult?.site_analysis && (
         <SiteAnalysisCard analysis={apiResult.site_analysis} />
       )}
+
+      {/* AI Valuation & Similar Property Comparison */}
+      {apiResult && (
+        <AIValuationComparison
+          apiResult={apiResult}
+          downloadReport={handleDownloadReport}
+          isDownloading={isDownloading}
+        />
+      )}
+
 
 
       {/* Budget analysis */}
@@ -1063,7 +1101,161 @@ function SiteAnalysisCard({ analysis }: { analysis: NonNullable<PredictionRespon
   );
 }
 
+
+function AIValuationComparison({
+  apiResult,
+  downloadReport,
+  isDownloading,
+}: {
+  apiResult: any;
+  downloadReport: (id: string) => void;
+  isDownloading: boolean;
+}) {
+  const { similar_properties, market_analysis, ai_explanation, prediction_id } = apiResult;
+
+  if (!similar_properties || !market_analysis) return null;
+
+  const priceDiff = market_analysis.price_difference;
+  const isBelowMarket = priceDiff <= 0;
+
+  return (
+    <div className="mt-8 rounded-3xl bg-card border border-border p-6 md:p-8 shadow-xl shadow-primary/5 transition-all duration-300 hover:shadow-primary/10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-6 border-b border-border">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-accent-blue text-primary-foreground grid place-items-center shadow-lg shadow-primary/20 animate-pulse">
+            <Sparkles className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="font-display text-2xl font-extrabold tracking-tight">AI Valuation & Market Intelligence</h2>
+            <p className="text-sm text-muted-foreground">Regional market similarity index and valuation diagnostics</p>
+          </div>
+        </div>
+        {prediction_id && (
+          <button
+            onClick={() => downloadReport(prediction_id)}
+            disabled={isDownloading}
+            className="inline-flex items-center gap-2 bg-gradient-to-r from-primary to-accent-blue hover:opacity-95 disabled:opacity-50 text-primary-foreground font-semibold px-5 py-2.5 rounded-2xl text-sm transition shadow-md shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] duration-200"
+          >
+            {isDownloading ? (
+              <span className="animate-spin mr-1">⚡</span>
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            Download Complete AI Valuation Report
+          </button>
+        )}
+      </div>
+
+      {/* Grid: AI Explanation & Market Stats */}
+      <div className="grid lg:grid-cols-3 gap-6">
+        {/* Left Col: AI Explanation & Price insights */}
+        <div className="lg:col-span-2 space-y-6">
+          {ai_explanation && (
+            <div className="rounded-2xl bg-muted/40 p-5 border border-border/60">
+              <div className="flex items-center gap-2 mb-3 text-primary">
+                <BadgeCheck className="w-5 h-5" />
+                <h3 className="font-display font-bold text-base">Valuation Explanation</h3>
+              </div>
+              <div className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                {ai_explanation}
+              </div>
+            </div>
+          )}
+
+          {/* Similar Properties Table/Grid */}
+          <div>
+            <h3 className="font-display font-bold text-base mb-3 flex items-center gap-2 text-foreground">
+              <Building className="w-4 h-4 text-primary" />
+              Similar Properties Dataset Match
+            </h3>
+            <div className="grid md:grid-cols-3 gap-4">
+              {similar_properties.map((prop: any, idx: number) => (
+                <div
+                  key={idx}
+                  className="rounded-2xl border border-border p-4 bg-card hover:border-primary/45 hover:shadow-md transition-all duration-300"
+                >
+                  <div className="flex justify-between items-start mb-2 gap-2">
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary shrink-0">
+                      {prop.similarity}% Match
+                    </span>
+                    <span className="text-[10px] text-muted-foreground flex items-center gap-1 min-w-0">
+                      <MapPin className="w-3 h-3 shrink-0" />
+                      <span className="truncate">{prop.location}</span>
+                    </span>
+                  </div>
+                  <div className="font-display font-bold text-lg text-foreground mt-2">
+                    {inr(prop.price)}
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-border grid grid-cols-2 gap-y-1 gap-x-2 text-[11px] text-muted-foreground">
+                    <div>Area: <span className="font-medium text-foreground">{prop.built_up_area_sqft} sqft</span></div>
+                    <div>Bedrooms: <span className="font-medium text-foreground">{prop.bedrooms} BHK</span></div>
+                    <div className="col-span-2">Quality: <span className="font-medium text-foreground">{prop.quality}</span></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Right Col: Market comparison stats */}
+        <div className="rounded-2xl border border-border p-5 bg-muted/20 flex flex-col justify-between">
+          <div>
+            <h3 className="font-display font-bold text-base mb-4 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-primary" />
+              Market Price Comparison
+            </h3>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center py-2 border-b border-border/50">
+                <span className="text-sm text-muted-foreground">Market Average</span>
+                <span className="font-display font-bold text-foreground">{inr(market_analysis.average_price)}</span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-border/50">
+                <span className="text-sm text-muted-foreground">Minimum Price</span>
+                <span className="font-display font-medium text-muted-foreground">{inr(market_analysis.lowest_price)}</span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-border/50">
+                <span className="text-sm text-muted-foreground">Maximum Price</span>
+                <span className="font-display font-medium text-muted-foreground">{inr(market_analysis.highest_price)}</span>
+              </div>
+            </div>
+
+            <div className="mt-6 text-center">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Price Position</div>
+              <div
+                className={`inline-block mt-1.5 px-3 py-1 rounded-full text-xs font-semibold capitalize ${
+                  market_analysis.position.includes("below")
+                    ? "bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400"
+                    : market_analysis.position.includes("above")
+                    ? "bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400"
+                    : "bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400"
+                }`}
+              >
+                {market_analysis.position}
+              </div>
+            </div>
+          </div>
+
+          <div className={`mt-6 rounded-xl p-4 text-center ${isBelowMarket ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-rose-500/10 text-rose-700 dark:text-rose-400"}`}>
+            <div className="text-[11px] opacity-80 font-medium">Difference to Market Average</div>
+            <div className="font-display font-extrabold text-xl mt-1">
+              {isBelowMarket ? "-" : "+"}
+              {inr(Math.abs(priceDiff))}
+            </div>
+            <div className="text-[11px] mt-1.5 opacity-80 leading-normal">
+              {isBelowMarket
+                ? "Your design estimate is cost-efficient compared to regional benchmarks."
+                : "Higher quality specs or accessibility constraints justify the valuation premium."}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MiniStat({ label, value }: { label: string; value: string }) {
+
   return (
     <div className="rounded-2xl border border-border bg-background/60 p-3">
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>

@@ -17,3 +17,4 @@ python-multipart==0.0.20
 # The extractor auto-detects the provider from environment variables.
 openai==1.93.0
 google-generativeai==0.8.5
+reportlab==4.1.0
