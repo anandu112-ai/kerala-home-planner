@@ -6,15 +6,20 @@
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
+// Vercel sets VERCEL=1 in every build environment automatically.
+// Railway does not set it, so we default to node-server there.
+const isVercel = process.env.VERCEL === "1";
+
 export default defineConfig({
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
     server: { entry: "server" },
   },
-  // Target a standalone Node server for Railway/self-hosted deployments.
   nitro: {
-    preset: "node-server",
+    // "vercel"      → outputs to .vercel/output (Vercel serverless format)
+    // "node-server" → outputs to .output/server/index.mjs (Railway / Docker)
+    preset: isVercel ? "vercel" : "node-server",
 
     // --- Fix: TypeError: __commonJSMin is not a function ---
     //
