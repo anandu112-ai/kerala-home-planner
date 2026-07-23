@@ -1,0 +1,1 @@
+from app.services.predictor import predict_with_ai_adjustments
