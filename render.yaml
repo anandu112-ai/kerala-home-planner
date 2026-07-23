@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: kerala-home-planner-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: ENVIRONMENT
+        value: production
+      - key: FRONTEND_URL
+        sync: false          # set this manually in Render dashboard to your Vercel URL
+      - key: GEMINI_API_KEY
+        sync: false          # set this manually in Render dashboard
+      # Uncomment if using OpenAI instead:
+      # - key: OPENAI_API_KEY
+      #   sync: false
