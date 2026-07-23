@@ -16,6 +16,7 @@ export type Inputs = {
   flooring: "Cement" | "Vitrified Tile" | "Granite" | "Marble";
   budget: number;
   addons: string[];
+  siteDescription?: string;
 };
 
 export const DISTRICTS = [
