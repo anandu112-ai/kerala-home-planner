@@ -465,6 +465,29 @@ function Wizard({ inputs, setInputs, onSubmit }: { inputs: Inputs; setInputs: (i
                 })}
               </div>
             </div>
+
+            <div className="mt-8">
+              <label className="text-sm font-medium flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-primary" />
+                Additional Site Details
+                <span className="text-xs font-normal text-muted-foreground">(optional but recommended)</span>
+              </label>
+              <p className="text-xs text-muted-foreground mt-1">
+                Describe special conditions our AI can factor into the estimate.
+              </p>
+              <textarea
+                value={inputs.siteDescription ?? ""}
+                onChange={(e) => upd("siteDescription", e.target.value.slice(0, 800))}
+                rows={6}
+                maxLength={800}
+                placeholder={`Describe special site conditions:\nExample:\n- No vehicle access\n- Hilly area\n- Near highway\n- Flood-prone area\n- Beautiful valley view\n- Far from city\n- Good water availability`}
+                className="mt-2 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+              />
+              <div className="mt-1.5 flex justify-between text-xs text-muted-foreground">
+                <span>Our AI will detect scenic views, accessibility & risk factors.</span>
+                <span>{(inputs.siteDescription ?? "").length}/800</span>
+              </div>
+            </div>
           </>
         )}
 
