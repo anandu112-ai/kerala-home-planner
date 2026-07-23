@@ -19,47 +19,28 @@ import {
   inr, type Inputs, type SmartRec,
 } from "@/lib/estimator";
 import jsPDF from "jspdf";
-import { createServerFn } from "@tanstack/react-start";
+import { predictPrice, type PredictionResponse } from "@/services/predictionApi";
 import { toast, Toaster } from "sonner";
 
-export const getPrediction = createServerFn({ method: "POST" })
-  .validator((inputs: Inputs) => inputs)
-  .handler(async ({ data: inputs }) => {
-    const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
-    console.log("getPrediction: Fetching prediction from backend URL:", backendUrl);
-
-    const payload = {
-      district: inputs.district,
-      built_up_area_sqft: inputs.builtUpArea,
-      plot_size_cents: inputs.plotSize,
-      bedrooms: inputs.bedrooms,
-      bathrooms: inputs.bathrooms,
-      floors: inputs.floors,
-      parking_spaces: inputs.parking,
-      balconies: inputs.balconies,
-      kitchen_type: inputs.kitchen,
-      quality: inputs.quality,
-      roof_type: inputs.roof,
-      flooring: inputs.flooring,
-      budget: inputs.budget,
-      addons: inputs.addons,
-    };
-
-    const res = await fetch(`${backendUrl}/predict`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "Unknown error");
-      throw new Error(`Backend returned status ${res.status}: ${errText}`);
-    }
-
-    return await res.json();
+async function getPrediction(inputs: Inputs): Promise<PredictionResponse> {
+  return predictPrice({
+    district: inputs.district,
+    built_up_area_sqft: inputs.builtUpArea,
+    plot_size_cents: inputs.plotSize,
+    bedrooms: inputs.bedrooms,
+    bathrooms: inputs.bathrooms,
+    floors: inputs.floors,
+    parking_spaces: inputs.parking,
+    balconies: inputs.balconies,
+    kitchen_type: inputs.kitchen,
+    quality: inputs.quality,
+    roof_type: inputs.roof,
+    flooring: inputs.flooring,
+    budget: inputs.budget,
+    addons: inputs.addons,
+    site_description: inputs.siteDescription?.trim() || undefined,
   });
+}
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -145,7 +126,7 @@ const initialInputs: Inputs = {
   district: "Ernakulam", builtUpArea: 1800, plotSize: 8, bedrooms: 3,
   bathrooms: 3, floors: 2, parking: 1, balconies: 2,
   kitchen: "Modular", quality: "Standard", roof: "RCC", flooring: "Vitrified Tile",
-  budget: 5500000, addons: [],
+  budget: 5500000, addons: [], siteDescription: "",
 };
 
 const ADDON_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -153,19 +134,7 @@ const ADDON_ICONS: Record<string, React.ComponentType<{ className?: string }>> =
 };
 
 // Shape of the JSON response from the FastAPI /predict endpoint
-type ApiResult = {
-  predicted_cost: number;
-  cost_range: { min: number; max: number };
-  model_accuracy: number;
-  cost_per_sqft: number;
-  house_category: string;
-  construction_time: string;
-  health_score: number;
-  budget: { status: string; surplus: number; deficit: number; utilization: number };
-  stage_breakdown: { stage: string; percentage: number; cost: number }[];
-  recommendations: { type: string; title: string; description: string; priority: string; estimated_cost_impact: string }[];
-  addons: { selected: { name: string; cost: number }[]; total_cost: number };
-} | null;
+type ApiResult = PredictionResponse | null;
 
 function App() {
   const [view, setView] = useState<View>("landing");
@@ -186,12 +155,17 @@ function App() {
   }, [view]);
 
   const handleSubmit = async () => {
+    if (!inputs.district || !inputs.builtUpArea || !inputs.budget) {
+      toast.error("Please fill in all required fields.");
+      return;
+    }
     setView("loading");
     try {
-      const result = await getPrediction({ data: inputs });
-      setApiResult(result as ApiResult);
+      const result = await getPrediction(inputs);
+      setApiResult(result);
     } catch (err) {
       console.warn("ML backend unreachable, using built-in estimate engine:", err);
+      toast.error("Backend unavailable — showing local estimate.");
       setApiResult(null);
     }
     setTimeout(() => setView("dashboard"), 2400);
