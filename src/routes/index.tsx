@@ -924,6 +924,73 @@ function BudgetTile({ label, value, tone }: { label: string; value: string; tone
   );
 }
 
+function SiteAnalysisCard({ analysis }: { analysis: NonNullable<PredictionResponse["site_analysis"]> }) {
+  const adj = analysis.adjustment_percent;
+  const adjTone = adj < 0 ? "text-red-600" : adj > 0 ? "text-emerald-600" : "text-muted-foreground";
+  const adjBg = adj < 0 ? "bg-red-50 dark:bg-red-950/30" : adj > 0 ? "bg-emerald-50 dark:bg-emerald-950/30" : "bg-muted";
+  const sign = adj > 0 ? "+" : "";
+  return (
+    <div className="mt-8 rounded-3xl bg-card border border-border p-6 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex items-center gap-2 mb-1">
+        <Sparkles className="w-5 h-5 text-primary" />
+        <h2 className="font-display text-xl font-bold">AI Site Analysis</h2>
+      </div>
+      <p className="text-sm text-muted-foreground mb-6">
+        Our AI reviewed the additional site details you provided and adjusted the ML prediction accordingly.
+      </p>
+
+      <div className="grid md:grid-cols-3 gap-4">
+        <div className="rounded-2xl bg-background border border-border p-4">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">Base ML Prediction</div>
+          <div className="font-display text-2xl font-bold mt-1">{inr(analysis.base_prediction)}</div>
+        </div>
+        <div className={`rounded-2xl border border-border p-4 ${adjBg}`}>
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">AI Price Adjustment</div>
+          <div className={`font-display text-2xl font-bold mt-1 ${adjTone}`}>{sign}{adj}%</div>
+          {analysis.adjustment_reason && (
+            <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{analysis.adjustment_reason}</div>
+          )}
+        </div>
+        <div className="rounded-2xl bg-primary/5 border border-primary/30 p-4">
+          <div className="text-xs uppercase tracking-wider text-primary/80">Final Estimated Price</div>
+          <div className="font-display text-2xl font-bold mt-1 text-primary">{inr(analysis.final_price)}</div>
+        </div>
+      </div>
+
+      {analysis.detected_conditions.length > 0 && (
+        <div className="mt-6">
+          <div className="text-sm font-semibold mb-3">Detected Conditions</div>
+          <div className="grid sm:grid-cols-2 gap-2">
+            {analysis.detected_conditions.map((c, i) => (
+              <div
+                key={i}
+                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${
+                  c.positive
+                    ? "border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/20"
+                    : "border-red-200 dark:border-red-900 bg-red-50/60 dark:bg-red-950/20"
+                }`}
+              >
+                {c.positive ? (
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                )}
+                <span>{c.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {analysis.summary && (
+        <div className="mt-5 rounded-2xl bg-muted/50 border border-border p-4 text-sm text-muted-foreground">
+          {analysis.summary}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-border bg-background/60 p-3">
