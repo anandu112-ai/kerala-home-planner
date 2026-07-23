@@ -19,47 +19,28 @@ import {
   inr, type Inputs, type SmartRec,
 } from "@/lib/estimator";
 import jsPDF from "jspdf";
-import { createServerFn } from "@tanstack/react-start";
+import { predictPrice, type PredictionResponse } from "@/services/predictionApi";
 import { toast, Toaster } from "sonner";
 
-export const getPrediction = createServerFn({ method: "POST" })
-  .validator((inputs: Inputs) => inputs)
-  .handler(async ({ data: inputs }) => {
-    const backendUrl = process.env.BACKEND_URL || "http://127.0.0.1:8000";
-    console.log("getPrediction: Fetching prediction from backend URL:", backendUrl);
-
-    const payload = {
-      district: inputs.district,
-      built_up_area_sqft: inputs.builtUpArea,
-      plot_size_cents: inputs.plotSize,
-      bedrooms: inputs.bedrooms,
-      bathrooms: inputs.bathrooms,
-      floors: inputs.floors,
-      parking_spaces: inputs.parking,
-      balconies: inputs.balconies,
-      kitchen_type: inputs.kitchen,
-      quality: inputs.quality,
-      roof_type: inputs.roof,
-      flooring: inputs.flooring,
-      budget: inputs.budget,
-      addons: inputs.addons,
-    };
-
-    const res = await fetch(`${backendUrl}/predict`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "Unknown error");
-      throw new Error(`Backend returned status ${res.status}: ${errText}`);
-    }
-
-    return await res.json();
+async function getPrediction(inputs: Inputs): Promise<PredictionResponse> {
+  return predictPrice({
+    district: inputs.district,
+    built_up_area_sqft: inputs.builtUpArea,
+    plot_size_cents: inputs.plotSize,
+    bedrooms: inputs.bedrooms,
+    bathrooms: inputs.bathrooms,
+    floors: inputs.floors,
+    parking_spaces: inputs.parking,
+    balconies: inputs.balconies,
+    kitchen_type: inputs.kitchen,
+    quality: inputs.quality,
+    roof_type: inputs.roof,
+    flooring: inputs.flooring,
+    budget: inputs.budget,
+    addons: inputs.addons,
+    site_description: inputs.siteDescription?.trim() || undefined,
   });
+}
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -145,7 +126,7 @@ const initialInputs: Inputs = {
   district: "Ernakulam", builtUpArea: 1800, plotSize: 8, bedrooms: 3,
   bathrooms: 3, floors: 2, parking: 1, balconies: 2,
   kitchen: "Modular", quality: "Standard", roof: "RCC", flooring: "Vitrified Tile",
-  budget: 5500000, addons: [],
+  budget: 5500000, addons: [], siteDescription: "",
 };
 
 const ADDON_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -153,19 +134,7 @@ const ADDON_ICONS: Record<string, React.ComponentType<{ className?: string }>> =
 };
 
 // Shape of the JSON response from the FastAPI /predict endpoint
-type ApiResult = {
-  predicted_cost: number;
-  cost_range: { min: number; max: number };
-  model_accuracy: number;
-  cost_per_sqft: number;
-  house_category: string;
-  construction_time: string;
-  health_score: number;
-  budget: { status: string; surplus: number; deficit: number; utilization: number };
-  stage_breakdown: { stage: string; percentage: number; cost: number }[];
-  recommendations: { type: string; title: string; description: string; priority: string; estimated_cost_impact: string }[];
-  addons: { selected: { name: string; cost: number }[]; total_cost: number };
-} | null;
+type ApiResult = PredictionResponse | null;
 
 function App() {
   const [view, setView] = useState<View>("landing");
@@ -186,12 +155,17 @@ function App() {
   }, [view]);
 
   const handleSubmit = async () => {
+    if (!inputs.district || !inputs.builtUpArea || !inputs.budget) {
+      toast.error("Please fill in all required fields.");
+      return;
+    }
     setView("loading");
     try {
-      const result = await getPrediction({ data: inputs });
-      setApiResult(result as ApiResult);
+      const result = await getPrediction(inputs);
+      setApiResult(result);
     } catch (err) {
       console.warn("ML backend unreachable, using built-in estimate engine:", err);
+      toast.error("Backend unavailable — showing local estimate.");
       setApiResult(null);
     }
     setTimeout(() => setView("dashboard"), 2400);
@@ -491,6 +465,29 @@ function Wizard({ inputs, setInputs, onSubmit }: { inputs: Inputs; setInputs: (i
                 })}
               </div>
             </div>
+
+            <div className="mt-8">
+              <label className="text-sm font-medium flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-primary" />
+                Additional Site Details
+                <span className="text-xs font-normal text-muted-foreground">(optional but recommended)</span>
+              </label>
+              <p className="text-xs text-muted-foreground mt-1">
+                Describe special conditions our AI can factor into the estimate.
+              </p>
+              <textarea
+                value={inputs.siteDescription ?? ""}
+                onChange={(e) => upd("siteDescription", e.target.value.slice(0, 800))}
+                rows={6}
+                maxLength={800}
+                placeholder={`Describe special site conditions:\nExample:\n- No vehicle access\n- Hilly area\n- Near highway\n- Flood-prone area\n- Beautiful valley view\n- Far from city\n- Good water availability`}
+                className="mt-2 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+              />
+              <div className="mt-1.5 flex justify-between text-xs text-muted-foreground">
+                <span>Our AI will detect scenic views, accessibility & risk factors.</span>
+                <span>{(inputs.siteDescription ?? "").length}/800</span>
+              </div>
+            </div>
           </>
         )}
 
@@ -684,6 +681,12 @@ function Dashboard({ inputs, setInputs, apiResult, onEdit }: { inputs: Inputs; s
         <KpiCard icon={Wallet} label="Budget Status" value={budget.status === "within" ? "Within Budget" : budget.status === "tight" ? "Budget Tight" : "Budget Short"}
           sub={`Utilization ${budget.utilization}%`} tone={budget.status === "within" ? "good" : budget.status === "tight" ? "warn" : "bad"} />
       </div>
+
+      {/* AI Site Analysis */}
+      {apiResult?.site_analysis && (
+        <SiteAnalysisCard analysis={apiResult.site_analysis} />
+      )}
+
 
       {/* Budget analysis */}
       <div className="mt-8 rounded-3xl bg-card border border-border p-6 md:p-8">
@@ -917,6 +920,73 @@ function BudgetTile({ label, value, tone }: { label: string; value: string; tone
     <div className="rounded-2xl bg-background border border-border p-4">
       <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
       <div className={`font-display text-xl font-bold mt-1 ${color}`}>{value}</div>
+    </div>
+  );
+}
+
+function SiteAnalysisCard({ analysis }: { analysis: NonNullable<PredictionResponse["site_analysis"]> }) {
+  const adj = analysis.adjustment_percent;
+  const adjTone = adj < 0 ? "text-red-600" : adj > 0 ? "text-emerald-600" : "text-muted-foreground";
+  const adjBg = adj < 0 ? "bg-red-50 dark:bg-red-950/30" : adj > 0 ? "bg-emerald-50 dark:bg-emerald-950/30" : "bg-muted";
+  const sign = adj > 0 ? "+" : "";
+  return (
+    <div className="mt-8 rounded-3xl bg-card border border-border p-6 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex items-center gap-2 mb-1">
+        <Sparkles className="w-5 h-5 text-primary" />
+        <h2 className="font-display text-xl font-bold">AI Site Analysis</h2>
+      </div>
+      <p className="text-sm text-muted-foreground mb-6">
+        Our AI reviewed the additional site details you provided and adjusted the ML prediction accordingly.
+      </p>
+
+      <div className="grid md:grid-cols-3 gap-4">
+        <div className="rounded-2xl bg-background border border-border p-4">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">Base ML Prediction</div>
+          <div className="font-display text-2xl font-bold mt-1">{inr(analysis.base_prediction)}</div>
+        </div>
+        <div className={`rounded-2xl border border-border p-4 ${adjBg}`}>
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">AI Price Adjustment</div>
+          <div className={`font-display text-2xl font-bold mt-1 ${adjTone}`}>{sign}{adj}%</div>
+          {analysis.adjustment_reason && (
+            <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{analysis.adjustment_reason}</div>
+          )}
+        </div>
+        <div className="rounded-2xl bg-primary/5 border border-primary/30 p-4">
+          <div className="text-xs uppercase tracking-wider text-primary/80">Final Estimated Price</div>
+          <div className="font-display text-2xl font-bold mt-1 text-primary">{inr(analysis.final_price)}</div>
+        </div>
+      </div>
+
+      {analysis.detected_conditions.length > 0 && (
+        <div className="mt-6">
+          <div className="text-sm font-semibold mb-3">Detected Conditions</div>
+          <div className="grid sm:grid-cols-2 gap-2">
+            {analysis.detected_conditions.map((c, i) => (
+              <div
+                key={i}
+                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${
+                  c.positive
+                    ? "border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/20"
+                    : "border-red-200 dark:border-red-900 bg-red-50/60 dark:bg-red-950/20"
+                }`}
+              >
+                {c.positive ? (
+                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                )}
+                <span>{c.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {analysis.summary && (
+        <div className="mt-5 rounded-2xl bg-muted/50 border border-border p-4 text-sm text-muted-foreground">
+          {analysis.summary}
+        </div>
+      )}
     </div>
   );
 }
