@@ -1,0 +1,16 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.3
+
+pydantic==2.11.7
+
+scikit-learn==1.6.1
+pandas==2.3.1
+numpy==2.3.1
+joblib==1.5.1
+
+python-dotenv==1.1.1
+python-multipart==0.0.20
+
+# LLM integrations (only the one matching your key is used; both are safe to install)
+openai==1.93.0
+google-generativeai==0.8.5
