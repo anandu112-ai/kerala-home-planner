@@ -19,26 +19,29 @@ import {
   inr, type Inputs, type SmartRec,
 } from "@/lib/estimator";
 import jsPDF from "jspdf";
-import { predictPrice, type PredictionResponse } from "@/services/predictionApi";
+import { type PredictionResponse } from "@/services/predictionApi";
+import { serverPredict } from "@/services/serverPredict";
 import { toast, Toaster } from "sonner";
 
 async function getPrediction(inputs: Inputs): Promise<PredictionResponse> {
-  return predictPrice({
-    district: inputs.district,
-    built_up_area_sqft: inputs.builtUpArea,
-    plot_size_cents: inputs.plotSize,
-    bedrooms: inputs.bedrooms,
-    bathrooms: inputs.bathrooms,
-    floors: inputs.floors,
-    parking_spaces: inputs.parking,
-    balconies: inputs.balconies,
-    kitchen_type: inputs.kitchen,
-    quality: inputs.quality,
-    roof_type: inputs.roof,
-    flooring: inputs.flooring,
-    budget: inputs.budget,
-    addons: inputs.addons,
-    site_description: inputs.siteDescription?.trim() || undefined,
+  return serverPredict({
+    data: {
+      district: inputs.district,
+      built_up_area_sqft: inputs.builtUpArea,
+      plot_size_cents: inputs.plotSize,
+      bedrooms: inputs.bedrooms,
+      bathrooms: inputs.bathrooms,
+      floors: inputs.floors,
+      parking_spaces: inputs.parking,
+      balconies: inputs.balconies,
+      kitchen_type: inputs.kitchen,
+      quality: inputs.quality,
+      roof_type: inputs.roof,
+      flooring: inputs.flooring,
+      budget: inputs.budget,
+      addons: inputs.addons,
+      site_description: inputs.siteDescription?.trim() || undefined,
+    },
   });
 }
 
