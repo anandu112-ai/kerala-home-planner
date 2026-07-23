@@ -6,28 +6,57 @@ import urllib.error
 
 logger = logging.getLogger("kerala_home_planner.services.llm_feature_extractor")
 
-SYSTEM_PROMPT = """You are a real estate feature extractor. Analyze the following site description and extract the features.
-Return ONLY a valid JSON object. Do not include any markdown format (like ```json), other text, or explanations.
+SYSTEM_PROMPT = """You are a construction site condition extractor for Kerala house construction projects.
+Analyze the site description and extract features that affect CONSTRUCTION COST.
+Return ONLY a valid JSON object. Do not include markdown, code fences, or any explanation.
 
-Allowed values for each feature:
-- vehicle_access: "good", "poor", "none" (if not mentioned, omit the key or return null)
-- terrain_type: "flat", "hilly" (if not mentioned, omit the key or return null)
-- road_quality: "good", "average", "poor" (if not mentioned, omit the key or return null)
-- scenic_view: true, false (if not mentioned, omit the key or return null)
-- distance_from_city: "low", "medium", "high" (if not mentioned, omit the key or return null)
-- water_availability: "good", "poor" (if not mentioned, omit the key or return null)
-- flood_risk: "yes", "no" (if not mentioned, omit the key or return null)
-- location_advantage: "positive", "neutral", "negative" (if not mentioned, omit the key or return null)
+Feature extraction guidelines:
+- vehicle_access: How easily can construction vehicles (trucks, mixers, cranes) reach the site?
+  "good"  = vehicles can reach directly
+  "poor"  = vehicles can reach with difficulty (narrow road, partial access)
+  "none"  = no vehicle access at all, everything must be carried manually
+
+- terrain_type: What is the ground/slope condition?
+  "flat"  = level ground, easy to build
+  "hilly" = sloped, hilly, mountainous, valley area, uneven terrain
+
+- road_quality: What is the condition of the road to the site?
+  "good"    = paved, wide road
+  "average" = narrow or partially paved
+  "poor"    = dirt track, damaged road, kutcha road
+
+- scenic_view: Does the site have a scenic/valley/mountain/river view?
+  true  = yes (valley view, river view, mountain view, beautiful scenery)
+  false = no
+
+- distance_from_city: How far is the site from the nearest town or city?
+  "low"    = within town / city limits, close to main road
+  "medium" = 5–20 km from town
+  "high"   = remote, far from city, isolated, deep village
+
+- water_availability: Is water available at or near the site during construction?
+  "good" = well, river, municipal supply nearby
+  "poor" = no water source, needs tanker
+
+- flood_risk: Is the site in a flood-prone, low-lying, or waterlogged area?
+  "yes" = flood-prone, waterlogged, near river that floods, low-lying
+  "no"  = not flood-prone
+
+- location_advantage: Overall location quality (omit if unclear)
+  "positive" / "neutral" / "negative"
+
+Omit any key that is NOT mentioned or cannot be inferred. Return null for uncertain values.
 
 Site description:
 "{site_description}"
 
-Example Output:
+Example — "House is in hilly area with beautiful valley view. No vehicle access and road is 1 km away. Far from city.":
 {{
   "vehicle_access": "none",
   "terrain_type": "hilly",
+  "road_quality": "poor",
   "scenic_view": true,
-  "location_advantage": "positive"
+  "distance_from_city": "high"
 }}"""
 
 def get_llm_config():

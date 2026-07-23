@@ -981,7 +981,8 @@ function SiteAnalysisCard({ analysis }: { analysis: NonNullable<PredictionRespon
         <h2 className="font-display text-xl font-bold">AI Site Condition Analysis</h2>
       </div>
       <p className="text-sm text-muted-foreground mb-6">
-        Our AI analysed the site details you described and calculated a price adjustment on top of the ML base prediction.
+        Our AI analysed your site description and calculated a <strong>construction cost adjustment</strong> — 
+        difficult site conditions like poor access, hilly terrain or flood risk increase the actual cost to build.
       </p>
 
       {/* Summary cards: base → adjustment → final */}
@@ -995,7 +996,7 @@ function SiteAnalysisCard({ analysis }: { analysis: NonNullable<PredictionRespon
 
         {/* Adjustment */}
         <div className={`rounded-2xl border p-5 ${pctBg}`}>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Site Adjustment</div>
+          <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Construction Cost Adjustment</div>
           <div className={`font-display text-2xl font-bold ${pctTone}`}>
             {sign}{pct}%
           </div>
@@ -1003,7 +1004,7 @@ function SiteAnalysisCard({ analysis }: { analysis: NonNullable<PredictionRespon
             {amt >= 0 ? "+" : ""}{inr(Math.abs(amt))}
           </div>
           <div className="text-xs text-muted-foreground mt-1">
-            {analysis.detected_conditions.length} condition{analysis.detected_conditions.length !== 1 ? "s" : ""} detected
+            {analysis.detected_conditions.length} site condition{analysis.detected_conditions.length !== 1 ? "s" : ""} detected
           </div>
         </div>
 
