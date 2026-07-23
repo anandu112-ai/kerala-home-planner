@@ -18,18 +18,20 @@ export interface PredictionRequest {
   site_description?: string;
 }
 
+// Matches backend DetectedCondition schema
 export interface DetectedCondition {
-  label: string;
-  positive: boolean;
+  condition: string;   // e.g. "No vehicle access"
+  impact: number;      // rupee delta, negative = reduction e.g. -400000
+  reason: string;      // e.g. "Accessibility difficulty reduces market value"
 }
 
+// Matches backend SiteAdjustment schema (returned inside site_analysis)
 export interface SiteAnalysis {
-  detected_conditions: DetectedCondition[];
-  adjustment_percent: number; // e.g. -5 or +3
-  adjustment_reason?: string;
   base_prediction: number;
-  final_price: number;
-  summary?: string;
+  site_adjustment_amount: number;      // rupee delta e.g. -150000
+  site_adjustment_percentage: number;  // e.g. -2.0
+  final_prediction: number;
+  detected_conditions: DetectedCondition[];
 }
 
 export interface PredictionResponse {
@@ -50,7 +52,8 @@ export interface PredictionResponse {
     estimated_cost_impact: string;
   }[];
   addons: { selected: { name: string; cost: number }[]; total_cost: number };
-  site_analysis?: SiteAnalysis;
+  // Present when site_description was provided and LLM succeeded
+  site_analysis?: SiteAnalysis | null;
 }
 
 const API_URL =

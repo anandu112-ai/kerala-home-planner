@@ -150,6 +150,7 @@ def health():
 
 
 @app.post("/api/v1/predict", response_model=PredictionResponse, tags=["Prediction"])
+@app.post("/predict", response_model=PredictionResponse, tags=["Prediction"])
 def predict(request: PredictionRequest):
     """
     Prediction pipeline

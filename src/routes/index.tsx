@@ -193,7 +193,7 @@ function App() {
           onSubmit={handleSubmit}
         />
       )}
-      {view === "loading" && <LoadingScreen />}
+      {view === "loading" && <LoadingScreen hasSiteDesc={!!(inputs.siteDescription?.trim())} />}
       {view === "dashboard" && (
         <Dashboard inputs={inputs} setInputs={setInputs} apiResult={apiResult} onEdit={() => setView("wizard")} />
       )}
@@ -558,27 +558,44 @@ function Pick({ label, value, options, onChange }: { label: string; value: strin
   );
 }
 
-function LoadingScreen() {
-  const messages = [
-    "Analyzing House Specifications...",
-    "Predicting Construction Cost...",
-    "Calculating Budget Analysis...",
-    "Preparing Recommendations...",
-    "Generating Dashboard...",
-  ];
+function LoadingScreen({ hasSiteDesc }: { hasSiteDesc?: boolean }) {
+  const messages = hasSiteDesc
+    ? [
+        "Analyzing House Specifications...",
+        "Predicting Construction Cost with ML Model...",
+        "Running AI Site Condition Analysis...",
+        "Calculating Price Adjustments...",
+        "Preparing Budget Analysis...",
+        "Generating Dashboard...",
+      ]
+    : [
+        "Analyzing House Specifications...",
+        "Predicting Construction Cost...",
+        "Calculating Budget Analysis...",
+        "Preparing Recommendations...",
+        "Generating Dashboard...",
+      ];
   const [i, setI] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setI(x => (x + 1) % messages.length), 480);
+    const interval = hasSiteDesc ? 400 : 480;
+    const t = setInterval(() => setI(x => (x + 1) % messages.length), interval);
     return () => clearInterval(t);
-  }, []);
+  }, [hasSiteDesc, messages.length]);
   return (
     <section className="max-w-3xl mx-auto px-6 py-24 text-center">
       <div className="mx-auto w-20 h-20 rounded-3xl bg-gradient-to-br from-primary to-accent-blue grid place-items-center text-primary-foreground shadow-xl shadow-primary/30 animate-pulse">
-        <Calculator className="w-10 h-10" />
+        {hasSiteDesc && i >= 2 && i <= 3
+          ? <Sparkles className="w-10 h-10" />
+          : <Calculator className="w-10 h-10" />}
       </div>
       <div className="mt-8 font-display text-2xl font-bold">{messages[i]}</div>
+      {hasSiteDesc && i >= 2 && i <= 3 && (
+        <p className="mt-2 text-sm text-muted-foreground">
+          Our AI is reading the site description to detect location conditions…
+        </p>
+      )}
       <div className="mt-6 max-w-md mx-auto h-2 rounded-full bg-muted overflow-hidden">
-        <div className="h-full bg-gradient-to-r from-primary to-accent-blue animate-[loading_2.4s_ease-in-out]" style={{ width: `${(i + 1) * 20}%`, transition: "width 400ms" }} />
+        <div className="h-full bg-gradient-to-r from-primary to-accent-blue" style={{ width: `${((i + 1) / messages.length) * 100}%`, transition: "width 400ms ease-in-out" }} />
       </div>
     </section>
   );
@@ -667,6 +684,11 @@ function Dashboard({ inputs, setInputs, apiResult, onEdit }: { inputs: Inputs; s
           <div className="text-sm text-muted-foreground">
             Estimate for {inputs.district} · {inputs.builtUpArea} sqft · <span className="font-medium text-foreground">{category}</span>
             {apiResult && <span className="ml-2 inline-flex items-center gap-1 text-emerald-600 font-medium"><BadgeCheck className="w-3.5 h-3.5" />ML Prediction</span>}
+            {apiResult?.site_analysis && (
+              <span className="ml-2 inline-flex items-center gap-1 text-primary font-medium">
+                <Sparkles className="w-3.5 h-3.5" />AI Site Analysis
+              </span>
+            )}
           </div>
           <h1 className="font-display text-3xl md:text-4xl font-extrabold tracking-tight">Your Construction Dashboard</h1>
         </div>
@@ -681,8 +703,16 @@ function Dashboard({ inputs, setInputs, apiResult, onEdit }: { inputs: Inputs; s
       </div>
 
       {/* KPIs */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard gradient icon={IndianRupee} label="Estimated Cost" value={inr(mlTotal)} sub={apiResult ? "ML model prediction" : "Client-side estimate"} />
+      <div className={`grid gap-4 ${apiResult?.site_analysis ? "md:grid-cols-2 lg:grid-cols-5" : "md:grid-cols-2 lg:grid-cols-4"}`}>
+        <KpiCard gradient icon={IndianRupee}
+          label={apiResult?.site_analysis ? "Base ML Prediction" : "Estimated Cost"}
+          value={inr(mlTotal)}
+          sub={apiResult ? (apiResult.site_analysis ? "Scikit-learn regression model" : "ML model prediction") : "Client-side estimate"} />
+        {apiResult?.site_analysis && (
+          <KpiCard icon={Sparkles} label="Final Estimated Price" value={inr(apiResult.site_analysis.final_prediction)}
+            sub={`Site adjustment: ${apiResult.site_analysis.site_adjustment_percentage > 0 ? "+" : ""}${apiResult.site_analysis.site_adjustment_percentage}%`}
+            tone={apiResult.site_analysis.site_adjustment_percentage >= 0 ? "good" : "bad"} />
+        )}
         <KpiCard icon={Ruler} label="Cost per sqft" value={inr(mlPerSqft)} sub="Based on built-up area" />
         <KpiCard icon={Clock} label="Construction Duration" value={apiResult?.construction_time ?? `${mlMonths - 1}–${mlMonths + 1} months`} sub="Estimated timeframe" />
         <KpiCard icon={Wallet} label="Budget Status" value={budget.status === "within" ? "Within Budget" : budget.status === "tight" ? "Budget Tight" : "Budget Short"}
@@ -932,66 +962,100 @@ function BudgetTile({ label, value, tone }: { label: string; value: string; tone
 }
 
 function SiteAnalysisCard({ analysis }: { analysis: NonNullable<PredictionResponse["site_analysis"]> }) {
-  const adj = analysis.adjustment_percent;
-  const adjTone = adj < 0 ? "text-red-600" : adj > 0 ? "text-emerald-600" : "text-muted-foreground";
-  const adjBg = adj < 0 ? "bg-red-50 dark:bg-red-950/30" : adj > 0 ? "bg-emerald-50 dark:bg-emerald-950/30" : "bg-muted";
-  const sign = adj > 0 ? "+" : "";
+  const pct = analysis.site_adjustment_percentage;
+  const amt = analysis.site_adjustment_amount;
+  const isPositive = pct > 0;
+  const isNegative = pct < 0;
+  const pctTone = isNegative ? "text-red-600" : isPositive ? "text-emerald-600" : "text-muted-foreground";
+  const pctBg   = isNegative ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-900"
+                : isPositive ? "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900"
+                : "bg-muted border-border";
+  const sign = isPositive ? "+" : "";
+
   return (
     <div className="mt-8 rounded-3xl bg-card border border-border p-6 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+
+      {/* Header */}
       <div className="flex items-center gap-2 mb-1">
         <Sparkles className="w-5 h-5 text-primary" />
-        <h2 className="font-display text-xl font-bold">AI Site Analysis</h2>
+        <h2 className="font-display text-xl font-bold">AI Site Condition Analysis</h2>
       </div>
       <p className="text-sm text-muted-foreground mb-6">
-        Our AI reviewed the additional site details you provided and adjusted the ML prediction accordingly.
+        Our AI analysed the site details you described and calculated a price adjustment on top of the ML base prediction.
       </p>
 
+      {/* Summary cards: base → adjustment → final */}
       <div className="grid md:grid-cols-3 gap-4">
-        <div className="rounded-2xl bg-background border border-border p-4">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Base ML Prediction</div>
-          <div className="font-display text-2xl font-bold mt-1">{inr(analysis.base_prediction)}</div>
+        {/* Base prediction */}
+        <div className="rounded-2xl bg-background border border-border p-5">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Base ML Prediction</div>
+          <div className="font-display text-2xl font-bold">{inr(analysis.base_prediction)}</div>
+          <div className="text-xs text-muted-foreground mt-1">Scikit-learn regression model</div>
         </div>
-        <div className={`rounded-2xl border border-border p-4 ${adjBg}`}>
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">AI Price Adjustment</div>
-          <div className={`font-display text-2xl font-bold mt-1 ${adjTone}`}>{sign}{adj}%</div>
-          {analysis.adjustment_reason && (
-            <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{analysis.adjustment_reason}</div>
-          )}
+
+        {/* Adjustment */}
+        <div className={`rounded-2xl border p-5 ${pctBg}`}>
+          <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Site Adjustment</div>
+          <div className={`font-display text-2xl font-bold ${pctTone}`}>
+            {sign}{pct}%
+          </div>
+          <div className={`text-sm font-semibold mt-0.5 ${pctTone}`}>
+            {amt >= 0 ? "+" : ""}{inr(Math.abs(amt))}
+          </div>
+          <div className="text-xs text-muted-foreground mt-1">
+            {analysis.detected_conditions.length} condition{analysis.detected_conditions.length !== 1 ? "s" : ""} detected
+          </div>
         </div>
-        <div className="rounded-2xl bg-primary/5 border border-primary/30 p-4">
-          <div className="text-xs uppercase tracking-wider text-primary/80">Final Estimated Price</div>
-          <div className="font-display text-2xl font-bold mt-1 text-primary">{inr(analysis.final_price)}</div>
+
+        {/* Final price */}
+        <div className="rounded-2xl bg-primary/5 border border-primary/30 p-5">
+          <div className="text-xs uppercase tracking-wider text-primary/70 mb-1">Final Estimated Price</div>
+          <div className="font-display text-2xl font-bold text-primary">{inr(analysis.final_prediction)}</div>
+          <div className="text-xs text-muted-foreground mt-1">Base prediction + site adjustment</div>
         </div>
       </div>
 
+      {/* Detected conditions */}
       {analysis.detected_conditions.length > 0 && (
-        <div className="mt-6">
+        <div className="mt-7">
           <div className="text-sm font-semibold mb-3">Detected Conditions</div>
-          <div className="grid sm:grid-cols-2 gap-2">
-            {analysis.detected_conditions.map((c, i) => (
-              <div
-                key={i}
-                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${
-                  c.positive
-                    ? "border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/20"
-                    : "border-red-200 dark:border-red-900 bg-red-50/60 dark:bg-red-950/20"
-                }`}
-              >
-                {c.positive ? (
-                  <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                ) : (
-                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-                )}
-                <span>{c.label}</span>
-              </div>
-            ))}
+          <div className="grid sm:grid-cols-2 gap-3">
+            {analysis.detected_conditions.map((c, i) => {
+              const positive = c.impact >= 0;
+              return (
+                <div
+                  key={i}
+                  className={`rounded-2xl border p-4 ${
+                    positive
+                      ? "border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/20"
+                      : "border-red-200 dark:border-red-900 bg-red-50/60 dark:bg-red-950/20"
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    {positive ? (
+                      <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm">{c.condition}</div>
+                      <div className={`text-sm font-bold mt-0.5 ${positive ? "text-emerald-600" : "text-red-600"}`}>
+                        {positive ? "+" : "-"}{inr(Math.abs(c.impact))}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{c.reason}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {analysis.summary && (
+      {/* No conditions fallback */}
+      {analysis.detected_conditions.length === 0 && (
         <div className="mt-5 rounded-2xl bg-muted/50 border border-border p-4 text-sm text-muted-foreground">
-          {analysis.summary}
+          No specific site conditions were detected. The ML base prediction applies without adjustment.
         </div>
       )}
     </div>
