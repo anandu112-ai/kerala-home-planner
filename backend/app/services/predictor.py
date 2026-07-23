@@ -1,52 +1,66 @@
+"""
+predictor.py — Optimised prediction service.
+
+Key change: ML model inference and LLM feature extraction now run in **parallel
+threads** so neither blocks the other. Total wall-clock time is dominated by the
+slower of the two (usually the LLM), not their sum.
+"""
 import logging
+import concurrent.futures
 from app.predictor import predictor as ml_predictor
 from app.services.llm_feature_extractor import extract_features
 from app.services.price_adjustment import calculate_adjustments
 
 logger = logging.getLogger("kerala_home_planner.services.predictor")
 
+# Single shared thread-pool — avoids creating a new pool per request
+_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="pred")
+
+
 def predict_with_ai_adjustments(data: dict) -> dict:
     """
-    Predicts base cost using the existing ML model, extracts site features from 
-    site_description, and applies the price adjustments.
-    
-    If the LLM feature extraction fails or is unavailable, it returns the base ML prediction.
+    Predicts base cost (ML model) and extracts LLM site features in parallel.
+
+    Timeline (old):   ML ─── LLM_normalize ─── LLM_extract ─── done
+    Timeline (new):   ML ─────────────────────────────────────┐
+                            LLM_combined (one call) ──────────┤ → done
     """
-    # 1. Run base ML prediction
-    try:
-        base_prediction = ml_predictor.predict(data)
-    except Exception as e:
-        logger.error(f"Base ML model prediction failed: {e}", exc_info=True)
-        # If the base model fails, we cannot proceed, so we raise the exception
-        raise e
+    site_description = (data.get("site_description") or "").strip()
 
-    # 2. Extract site description (field is Optional[str], so may be None)
-    site_description = data.get("site_description") or ""
+    if site_description:
+        # ── Run ML and LLM concurrently ──
+        ml_future  = _executor.submit(ml_predictor.predict, data)
+        llm_future = _executor.submit(extract_features, site_description)
 
-    # 3. If site_description is empty or LLM fails, return base prediction with no adjustment
-    if not site_description.strip():
-        return {
-            "base_prediction": base_prediction,
-            "site_adjustment_amount": 0.0,
-            "site_adjustment_percentage": 0.0,
-            "final_prediction": base_prediction,
-            "detected_conditions": []
-        }
+        try:
+            base_prediction = ml_future.result()
+        except Exception as e:
+            logger.error("Base ML model prediction failed: %s", e, exc_info=True)
+            raise
 
-    try:
-        # Extract features using LLM
-        features = extract_features(site_description)
-        
-        # Calculate adjustments
-        adjustments = calculate_adjustments(base_prediction, features)
-        return adjustments
-    except Exception as e:
-        logger.error(f"AI adjustment layer failed: {e}", exc_info=True)
-        # Fallback to normal ML prediction normally without crashing
-        return {
-            "base_prediction": base_prediction,
-            "site_adjustment_amount": 0.0,
-            "site_adjustment_percentage": 0.0,
-            "final_prediction": base_prediction,
-            "detected_conditions": []
-        }
+        try:
+            features = llm_future.result()
+            adjustments = calculate_adjustments(base_prediction, features)
+            return adjustments
+        except Exception as e:
+            logger.error("AI adjustment layer failed (parallel): %s — falling back", e)
+            return _no_adjustment(base_prediction)
+
+    else:
+        # ── No site description — ML only, no LLM call at all ──
+        try:
+            base_prediction = ml_predictor.predict(data)
+        except Exception as e:
+            logger.error("Base ML model prediction failed: %s", e, exc_info=True)
+            raise
+        return _no_adjustment(base_prediction)
+
+
+def _no_adjustment(base_prediction: float) -> dict:
+    return {
+        "base_prediction": base_prediction,
+        "site_adjustment_amount": 0.0,
+        "site_adjustment_percentage": 0.0,
+        "final_prediction": base_prediction,
+        "detected_conditions": []
+    }
